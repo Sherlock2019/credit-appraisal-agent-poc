@@ -1,0 +1,6 @@
+application_id,age,income,employment_years,debt_to_income,credit_history_length,num_delinquencies,current_loans,requested_amount,loan_term_months,region
+app_0001,34,72000,6,0.22,8,0,1,15000,36,north
+app_0002,52,120000,12,0.18,15,0,2,25000,48,west
+app_0003,27,42000,3,0.35,4,1,0,8000,24,east
+app_0004,45,95000,10,0.25,12,0,3,30000,60,south
+app_0005,31,65000,4,0.28,6,2,1,12000,36,central
