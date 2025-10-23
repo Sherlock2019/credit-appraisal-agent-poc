@@ -1,6 +1,7 @@
-application_id,age,income,employment_years,debt_to_income,credit_history_length,num_delinquencies,current_loans,requested_amount,loan_term_months,region
-app_0001,34,72000,6,0.22,8,0,1,15000,36,north
-app_0002,52,120000,12,0.18,15,0,2,25000,48,west
-app_0003,27,42000,3,0.35,4,1,0,8000,24,east
-app_0004,45,95000,10,0.25,12,0,3,30000,60,south
-app_0005,31,65000,4,0.28,6,2,1,12000,36,central
+application_id,age,income,employment_length,loan_amount,loan_duration_months,collateral_value,collateral_type,co_loaners,credit_score,existing_debt,assets_owned,DTI,LTV,CCR,ITI,CWI
+APP_0001,35,75000,5,25000,36,30000,car,0,710,10000,50000,0.133,0.833,1.2,0.009,0.695
+APP_0002,42,60000,8,30000,48,28000,house,1,680,15000,80000,0.250,1.071,0.933,0.010,0.523
+APP_0003,29,52000,3,15000,24,18000,car,0,650,8000,30000,0.154,0.833,1.2,0.012,0.654
+APP_0004,50,90000,15,40000,60,60000,house,0,720,12000,120000,0.133,0.667,1.5,0.007,0.742
+APP_0005,31,45000,2,20000,36,15000,equipment,0,610,20000,25000,0.444,1.333,0.75,0.012,0.321
+
