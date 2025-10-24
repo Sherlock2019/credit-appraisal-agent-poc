@@ -7,65 +7,110 @@ LOGDIR="${ROOT}/.logs"
 APIPORT="${APIPORT:-8090}"
 UIPORT="${UIPORT:-8502}"
 
-mkdir -p "$LOGDIR" "${ROOT}/services/api/.runs" "${ROOT}/agents/credit_appraisal/models/production"
+mkdir -p "$LOGDIR" \
+         "${ROOT}/services/api/.runs" \
+         "${ROOT}/agents/credit_appraisal/models/production" \
+         "${ROOT}/.pids"
 
-# ── Ensure venv
+# ─────────────────────────────────────────────
+# Timestamped logs
+# ─────────────────────────────────────────────
+TS=$(date +"%Y%m%d-%H%M%S")
+API_LOG="${LOGDIR}/api_${TS}.log"
+UI_LOG="${LOGDIR}/ui_${TS}.log"
+COMBINED_LOG="${LOGDIR}/live_combined_${TS}.log"
+
+# ─────────────────────────────────────────────
+# Virtual environment
+# ─────────────────────────────────────────────
 if [[ ! -d "$VENV" ]]; then
   python3 -m venv "$VENV"
 fi
-# shellcheck disable=SC1090
 source "${VENV}/bin/activate"
 
 python -V
 pip -V
 
-# ── Install/upgrade deps for API + UI (idempotent)
+# ─────────────────────────────────────────────
+# Install deps
+# ─────────────────────────────────────────────
 python -m pip install -U pip wheel
 pip install -r "${ROOT}/services/api/requirements.txt"
 pip install -r "${ROOT}/services/ui/requirements.txt"
 
-# ── Helpful for local package imports (agents/, services/, etc.)
 export PYTHONPATH="${ROOT}"
 
-# ── Start API (Uvicorn)
+# ─────────────────────────────────────────────
+# Color helper
+# ─────────────────────────────────────────────
+color_echo() {
+  local color="$1"; shift
+  local msg="$*"
+  case "$color" in
+    red) echo -e "\033[1;31m$msg\033[0m" ;;
+    green) echo -e "\033[1;32m$msg\033[0m" ;;
+    yellow) echo -e "\033[1;33m$msg\033[0m" ;;
+    blue) echo -e "\033[1;34m$msg\033[0m" ;;
+    *) echo "$msg" ;;
+  esac
+}
+
+# ─────────────────────────────────────────────
+# Start API
+# ─────────────────────────────────────────────
 if [[ -f "${ROOT}/.pids/api.pid" ]] && kill -0 "$(cat "${ROOT}/.pids/api.pid")" 2>/dev/null; then
-  echo "API already running (PID $(cat "${ROOT}/.pids/api.pid"))."
+  color_echo yellow "API already running (PID $(cat "${ROOT}/.pids/api.pid"))."
 else
-  mkdir -p "${ROOT}/.pids"
   nohup "${VENV}/bin/uvicorn" services.api.main:app \
-        --host 0.0.0.0 --port "${APIPORT}" --reload \
-        > "${LOGDIR}/api.log" 2>&1 &
+    --host 0.0.0.0 --port "${APIPORT}" --reload \
+    > "${API_LOG}" 2>&1 &
   echo $! > "${ROOT}/.pids/api.pid"
-  echo "✅ API started (PID=$(cat "${ROOT}/.pids/api.pid")) | log: ${LOGDIR}/api.log"
+  color_echo green "✅ API started (PID=$(cat "${ROOT}/.pids/api.pid")) | log: ${API_LOG}"
 fi
 
-# ── Start UI (Streamlit)
+# ─────────────────────────────────────────────
+# Start UI (Streamlit)
+# ─────────────────────────────────────────────
 if [[ -f "${ROOT}/.pids/ui.pid" ]] && kill -0 "$(cat "${ROOT}/.pids/ui.pid")" 2>/dev/null; then
-  echo "UI already running (PID $(cat "${ROOT}/.pids/ui.pid"))."
+  color_echo yellow "UI already running (PID $(cat "${ROOT}/.pids/ui.pid"))."
 else
-  mkdir -p "${ROOT}/.pids"
-  nohup "${VENV}/bin/streamlit" run "${ROOT}/services/ui/app.py" \
-        --server.port "${UIPORT}" --server.address 0.0.0.0 \
-        > "${LOGDIR}/ui.log" 2>&1 &
+  color_echo blue "Starting Streamlit UI..."
+  cd "${ROOT}/services/ui"
+  nohup "${VENV}/bin/streamlit" run "app.py" \
+    --server.port "${UIPORT}" --server.address 0.0.0.0 \
+    --server.fileWatcherType none \
+    > "${UI_LOG}" 2>&1 &
   echo $! > "${ROOT}/.pids/ui.pid"
-  echo "✅ UI started (PID=$(cat "${ROOT}/.pids/ui.pid")) | log: ${LOGDIR}/ui.log"
+  cd "${ROOT}"
+  color_echo green "✅ UI started (PID=$(cat "${ROOT}/.pids/ui.pid")) | log: ${UI_LOG}"
 fi
 
+# ─────────────────────────────────────────────
+# Info
+# ─────────────────────────────────────────────
 echo "----------------------------------------------------"
-echo "🎯 All services running in background!"
-echo "📘 Swagger: http://localhost:${APIPORT}/docs"
-echo "🌐 Web UI:  http://localhost:${UIPORT}"
-echo "📂 Logs:    ${LOGDIR}"
+color_echo blue "🎯 All services running!"
+color_echo blue "📘 Swagger: http://localhost:${APIPORT}/docs"
+color_echo blue "🌐 Web UI:  http://localhost:${UIPORT}"
+color_echo blue "📂 Logs:    ${LOGDIR}"
 echo "----------------------------------------------------"
 
-# ── Background full log monitor
-echo "🧩 Starting background log monitor (full logs)..."
-
-nohup bash -c "tail -n 0 -f '${LOGDIR}/api.log' '${LOGDIR}/ui.log' \
-  >> '${LOGDIR}/live_combined.log'" >/dev/null 2>&1 &
-
+# ─────────────────────────────────────────────
+# Combined Log Monitor
+# ─────────────────────────────────────────────
+color_echo blue "🧩 Starting live log monitor..."
+nohup bash -c "tail -n 0 -F '${API_LOG}' '${UI_LOG}' | tee -a '${COMBINED_LOG}'" >/dev/null 2>&1 &
 LOG_MONITOR_PID=$!
 echo $LOG_MONITOR_PID > "${ROOT}/.pids/logmonitor.pid"
+color_echo green "✅ Live log monitor running (PID=${LOG_MONITOR_PID})"
+color_echo blue "📄 Combined live output → ${COMBINED_LOG}"
 
-echo "✅ Live log monitor running in background (PID=${LOG_MONITOR_PID})"
-echo "📄 Combined live output → ${LOGDIR}/live_combined.log"
+# Wait until combined log exists
+sleep 1
+touch "${COMBINED_LOG}"
+
+# ─────────────────────────────────────────────
+# Live Error View
+# ─────────────────────────────────────────────
+color_echo yellow "👁  Real-time ERROR view (press Ctrl+C to exit)..."
+tail -n 20 -f "${COMBINED_LOG}" | grep --line-buffered -E --color=always "ERROR|Exception|Traceback|CRITICAL" || true
