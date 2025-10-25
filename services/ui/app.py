@@ -10,15 +10,22 @@ from typing import Any, Dict, List, Optional, Tuple
 import numpy as np, pandas as pd, streamlit as st
 import os
 import io
-import re
-import datetime
 import json
-from typing import Dict, Any, Optional, List, Tuple
+import mimetypes
+import os
+import random
+import re
+import time
+import warnings
+from functools import wraps
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple
 
-import pandas as pd
 import numpy as np
+import pandas as pd
 import requests
 import streamlit as st
+from datetime import datetime as dt
 
 from services.paths import (
     RUNS_DIR as DEFAULT_RUNS_DIR,
@@ -127,9 +134,64 @@ def load_image_for(agent_id: str, industry: str) -> Optional[str]:
 def render_image_tag(agent_id: str, industry: str, emoji_fallback: str) -> str:
     img_path = load_image_for(agent_id, industry)
     if img_path:
-        return f'<img src="file://{img_path}" style="width:40px;height:40px;border-radius:8px;object-fit:cover;">'
-    else:
-        return f'<div style="font-size:28px;">{emoji_fallback}</div>'
+        data_uri = _image_to_data_uri(Path(img_path))
+        if data_uri:
+            return (
+                f'<img src="{data_uri}" '
+                "style=\"width:40px;height:40px;border-radius:8px;object-fit:cover;\">"
+            )
+    return f'<div style="font-size:28px;">{emoji_fallback}</div>'
+
+
+def _image_to_data_uri(path: Path) -> Optional[str]:
+    if not path.exists():
+        return None
+    mime, _ = mimetypes.guess_type(str(path))
+    if not mime:
+        mime = "image/png"
+    try:
+        payload = base64.b64encode(path.read_bytes()).decode("ascii")
+    except OSError:
+        return None
+    return f"data:{mime};base64,{payload}"
+
+
+def display_image_preview(path: Optional[str], caption: str, max_height: int = 180) -> bool:
+    if not path:
+        return False
+    file_path = Path(path)
+    data_uri = _image_to_data_uri(file_path)
+    if not data_uri:
+        return False
+    safe_caption = html.escape(caption)
+    st.markdown(
+        f"""
+        <figure style="margin:0;">
+            <img src="{data_uri}" style="max-width:100%;height:auto;max-height:{max_height}px;border-radius:12px;object-fit:contain;" />
+            <figcaption style="font-size:12px;color:#94a3b8;margin-top:4px;">{safe_caption}</figcaption>
+        </figure>
+        """,
+        unsafe_allow_html=True,
+    )
+    return True
+
+
+def display_full_width_banner(path: Optional[str], *, height: int = 360) -> bool:
+    if not path:
+        return False
+    file_path = Path(path)
+    data_uri = _image_to_data_uri(file_path)
+    if not data_uri:
+        return False
+    st.markdown(
+        f"""
+        <div style="width:100%;border-radius:16px;overflow:hidden;margin-bottom:1.25rem;">
+            <img src="{data_uri}" style="display:block;width:100%;height:{height}px;object-fit:cover;" />
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+    return True
 
 
 def _to_file_uri(path: Path) -> str:
@@ -407,7 +469,7 @@ with st.container():
     with col3:
         password = st.text_input("Password", type="password", placeholder="Enter any password")
 
-    login_btn = st.button("Login", type="primary", use_container_width=True)
+    login_btn = st.button("Login", type="primary", width="stretch")
 
     # Initialize session vars
     if "logged_in" not in st.session_state:
@@ -430,7 +492,7 @@ with st.container():
                 "name": username.strip(),
                 "email": email.strip(),
                 "flagged": False,
-                "timestamp": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "timestamp": dt.now().strftime("%Y-%m-%d %H:%M:%S"),
             }
             logo_base = sanitize_image_key(username or email)
             existing_logo = _first_existing_image(logo_base, COMPANY_LOGO_DIR)
@@ -901,7 +963,7 @@ def render_credit_dashboard(df: pd.DataFrame, currency_symbol: str = ""):
                     })
     if opp_rows:
         st.markdown("#### 📎 Short-Term Loan Candidates")
-        st.dataframe(pd.DataFrame(opp_rows).head(25), use_container_width=True, height=320)
+        st.dataframe(pd.DataFrame(opp_rows).head(25), width="stretch", height=320)
     else:
         st.info("No short-term loan candidates identified in this batch.")
 
@@ -933,7 +995,7 @@ def render_credit_dashboard(df: pd.DataFrame, currency_symbol: str = ""):
                 })
     if candidates:
         cand_df = pd.DataFrame(candidates).sort_values("benefit_score", ascending=False)
-        st.dataframe(cand_df.head(25), use_container_width=True, height=380)
+        st.dataframe(cand_df.head(25), width="stretch", height=380)
     else:
         st.info("No additional buyback beneficiaries identified.")
 
@@ -1113,7 +1175,7 @@ def render_credit_dashboard(df: pd.DataFrame, currency_symbol: str = ""):
         mix = df["customer_type"].value_counts().rename_axis("Customer Type").reset_index(name="Count")
         mix["Ratio"] = (mix["Count"] / mix["Count"].sum()).round(3)
         st.markdown("### 👥 Customer Mix")
-        st.dataframe(mix, use_container_width=True, height=220)
+        st.dataframe(mix, width="stretch", height=220)
 
 # ─────────────────────────────────────────────
 # PANEL RENDERERS
@@ -1225,12 +1287,12 @@ def render_tab_gen():
 
     colA, colB = st.columns(2)
     with colA:
-        if st.button("🔴 Generate RAW Synthetic Data (with PII)", use_container_width=True):
+        if st.button("🔴 Generate RAW Synthetic Data (with PII)", width="stretch"):
             raw_df = append_user_info(generate_raw_synthetic(rows, non_bank_ratio))
             st.session_state.synthetic_raw_df = raw_df
             raw_path = save_to_runs(raw_df, "synthetic_raw")
             st.success(f"Generated RAW (PII) dataset with {rows} rows in {st.session_state['currency_label']}. Saved to {raw_path}")
-            st.dataframe(raw_df.head(10), use_container_width=True)
+            st.dataframe(raw_df.head(10), width="stretch")
             st.download_button(
                 "⬇️ Download RAW CSV",
                 raw_df.to_csv(index=False).encode("utf-8"),
@@ -1239,12 +1301,12 @@ def render_tab_gen():
             )
 
     with colB:
-        if st.button("🟢 Generate ANON Synthetic Data (ready for agent)", use_container_width=True):
+        if st.button("🟢 Generate ANON Synthetic Data (ready for agent)", width="stretch"):
             anon_df = append_user_info(generate_anon_synthetic(rows, non_bank_ratio))
             st.session_state.synthetic_df = anon_df
             anon_path = save_to_runs(anon_df, "synthetic_anon")
             st.success(f"Generated ANON dataset with {rows} rows in {st.session_state['currency_label']}. Saved to {anon_path}")
-            st.dataframe(anon_df.head(10), use_container_width=True)
+            st.dataframe(anon_df.head(10), width="stretch")
             st.download_button(
                 "⬇️ Download ANON CSV",
                 anon_df.to_csv(index=False).encode("utf-8"),
@@ -1266,7 +1328,7 @@ def render_tab_clean():
             st.stop()
 
         st.write("📊 Original Data Preview:")
-        st.dataframe(dedupe_columns(df.head(5)), use_container_width=True)
+        st.dataframe(dedupe_columns(df.head(5)), width="stretch")
 
         sanitized, dropped_cols = drop_pii_columns(df)
         sanitized = append_user_info(sanitized)
@@ -1275,7 +1337,7 @@ def render_tab_clean():
 
         st.success(f"Dropped PII columns: {sorted(dropped_cols) if dropped_cols else 'None'}")
         st.write("✅ Sanitized Data Preview:")
-        st.dataframe(sanitized.head(5), use_container_width=True)
+        st.dataframe(sanitized.head(5), width="stretch")
 
         fpath = save_to_runs(sanitized, "anonymized")
         st.success(f"Saved anonymized file: {fpath}")
@@ -1511,7 +1573,7 @@ def render_tab_run():
                 rn["target_rate"] = None
 
     # 4) Run
-    if st.button("🚀 Run Agent", use_container_width=True):
+    if st.button("🚀 Run Agent", width="stretch"):
         try:
             files = None
             data: Dict[str, Any] = {
@@ -1692,7 +1754,7 @@ def render_tab_review():
         edited = st.data_editor(
             editable,
             num_rows="dynamic",
-            use_container_width=True,
+            width="stretch",
             key="review_editor",
             column_config={
                 "human_decision": st.column_config.SelectboxColumn(options=["approved", "denied"]),
@@ -1718,7 +1780,7 @@ def render_tab_review():
         safe_user = review_user.replace(" ", "").lower()
         review_name = f"creditappraisal.{safe_user}.{model_used}.{ts}.csv"
         csv_bytes = edited.to_csv(index=False).encode("utf-8")
-        st.download_button("⬇️ Export review CSV", csv_bytes, review_name, "text/csv")
+        st.download_button("⬇️ Export review CSV", csv_bytes, review_name, "text/csv", width="stretch")
         st.caption(f"Saved file name pattern: **{review_name}**")
 
 
@@ -1752,7 +1814,7 @@ def render_tab_train():
 
     colA, colB = st.columns([1,1])
     with colA:
-        if st.button("🚀 Train candidate model"):
+        if st.button("🚀 Train candidate model", width="stretch"):
             try:
                 r = requests.post(f"{API_URL}/v1/training/train", json=payload, timeout=90)
                 if r.ok:
@@ -1763,7 +1825,7 @@ def render_tab_train():
             except Exception as e:
                 st.error(f"Train failed: {e}")
     with colB:
-        if st.button("⬆️ Promote last candidate to PRODUCTION"):
+        if st.button("⬆️ Promote last candidate to PRODUCTION", width="stretch"):
             try:
                 r = requests.post(f"{API_URL}/v1/training/promote", timeout=30)
                 st.write(r.json() if r.ok else r.text)
