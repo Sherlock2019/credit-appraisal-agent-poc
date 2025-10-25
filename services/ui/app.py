@@ -429,9 +429,13 @@ for idx, (sector, industry, agent, desc, status, emoji) in enumerate(AGENTS):
         "💬 Comments": comments
     })
 
-df = pd.DataFrame(rows)
-st.markdown("### 📊 Global View of All AI Agents")
-st.write(df.to_html(escape=False, index=False), unsafe_allow_html=True)
+    with row_cols[9]:
+        if status.lower() == "available":
+            if st.button("Launch", key=f"launch_agent_{idx}"):
+                _launch_agent_workflow(agent)
+                st.experimental_rerun()
+        else:
+            st.markdown("—")
 
 # Try Now button
 st.markdown("---")
