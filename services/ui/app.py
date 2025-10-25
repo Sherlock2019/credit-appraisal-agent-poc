@@ -207,6 +207,7 @@ with hero_col:
     current_hero = _first_existing_image(LANDING_HERO_BASENAME)
     if current_hero:
         display_image_preview(current_hero, "Current landing hero")
+        st.image(current_hero, caption="Current landing hero", use_column_width=True)
     hero_upload = st.file_uploader(
         "Upload hero image",
         type=["jpg", "png", "webp", "gif", "svg"],
@@ -226,6 +227,7 @@ with industry_col:
     current_industry_image = _first_existing_image(industry_key)
     if current_industry_image:
         display_image_preview(current_industry_image, "Current industry image")
+        st.image(current_industry_image, caption="Current industry image", use_column_width=True)
     industry_upload = st.file_uploader(
         "Upload industry image",
         type=["jpg", "png", "webp", "gif", "svg"],
@@ -245,6 +247,7 @@ with agent_col:
     current_agent_image = _first_existing_image(agent_key)
     if current_agent_image:
         display_image_preview(current_agent_image, "Current agent image")
+        st.image(current_agent_image, caption="Current agent image", use_column_width=True)
     agent_upload = st.file_uploader(
         "Upload agent image",
         type=["jpg", "png", "webp", "gif", "svg"],
@@ -365,6 +368,7 @@ with st.container():
     with logo_col_preview:
         if current_logo_path and os.path.exists(current_logo_path):
             display_image_preview(current_logo_path, "Current logo", max_height=140)
+            st.image(current_logo_path, caption="Current logo", width=160)
         else:
             st.info("Upload a logo to personalise reports.")
     with logo_col_upload:
