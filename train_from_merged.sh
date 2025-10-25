@@ -4,7 +4,9 @@ set -euo pipefail
 # ─────────────────────────────────────────────
 # CONFIG (paths & API)
 # ─────────────────────────────────────────────
-ROOT="$HOME/demo-library"
+#ROOT="$HOME/demo-library"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT="${ROOT:-$SCRIPT_DIR}"
 RUNS_ROOT="$ROOT/services/api/.runs"
 TMP_FEEDBACK="$RUNS_ROOT/tmp_feedback"
 API_URL="http://localhost:8090"

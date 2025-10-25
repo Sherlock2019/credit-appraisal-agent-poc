@@ -8,11 +8,14 @@ from typing import Dict, Any
 
 from fastapi import APIRouter, UploadFile, File, HTTPException
 from fastapi.responses import StreamingResponse
+from services.paths import PROJECT_ROOT, RUNS_DIR as DEFAULT_RUNS_DIR, ensure_dir
 
 router = APIRouter(prefix="/v1", tags=["Export"])
 
-ROOT = os.path.expanduser("~/demo-library")
-RUNS_ROOT = os.path.join(ROOT, "services", "api", ".runs")
+#ROOT = os.path.expanduser("~/demo-library")
+#RUNS_ROOT = os.path.join(ROOT, "services", "api", ".runs")
+ROOT = str(PROJECT_ROOT)
+RUNS_ROOT = str(ensure_dir(DEFAULT_RUNS_DIR))
 AGENTS_DIR = os.path.join(ROOT, "agents")
 SAMPLES_DIR = os.path.join(ROOT, "samples")
 UI_DIR = os.path.join(ROOT, "services", "ui")

@@ -18,6 +18,12 @@ import numpy as np
 import requests
 import streamlit as st
 
+from services.paths import (
+    RUNS_DIR as DEFAULT_RUNS_DIR,
+    LANDING_IMG_DIR as DEFAULT_LANDING_IMG_DIR,
+    ensure_dir,
+)
+
 # Plotly (pretty, dark)
 import plotly.express as px
 import plotly.graph_objects as go
@@ -26,12 +32,14 @@ import plotly.graph_objects as go
 # CONFIG
 # ─────────────────────────────────────────────
 API_URL = os.getenv("API_URL", "http://localhost:8090")
-RUNS_DIR = os.path.expanduser("~/demo-library/services/api/.runs")
+#RUNS_DIR = os.path.expanduser("~/demo-library/services/api/.runs")
+RUNS_DIR = str(ensure_dir(DEFAULT_RUNS_DIR))
 TMP_FEEDBACK_DIR = os.path.join(RUNS_DIR, "tmp_feedback")
-LANDING_IMG_DIR = os.path.expanduser("~/demo-library/services/ui/landing_images")
-os.makedirs(RUNS_DIR, exist_ok=True)
+#LANDING_IMG_DIR = os.path.expanduser("~/demo-library/services/ui/landing_images")
+#os.makedirs(RUNS_DIR, exist_ok=True)
+LANDING_IMG_DIR = str(ensure_dir(DEFAULT_LANDING_IMG_DIR))
 os.makedirs(TMP_FEEDBACK_DIR, exist_ok=True)
-os.makedirs(LANDING_IMG_DIR, exist_ok=True)
+#os.makedirs(LANDING_IMG_DIR, exist_ok=True)
 
 st.set_page_config(page_title="OpenSource AI Agent Library", layout="wide")
 # ─────────────────────────────────────────────

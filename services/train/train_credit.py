@@ -6,8 +6,25 @@ from sklearn.model_selection import train_test_split
 from sklearn.metrics import roc_auc_score, f1_score, balanced_accuracy_score
 from sklearn.ensemble import GradientBoostingClassifier
 
-ROOT = os.path.expanduser("~/demo-library")
-RUNS_DIR = os.path.join(ROOT, "services", "api", ".runs")
+#ROOT = os.path.expanduser("~/demo-library")
+#RUNS_DIR = os.path.join(ROOT, "services", "api", ".runs")
+from services.paths import (
+    PROJECT_ROOT,
+    RUNS_DIR as DEFAULT_RUNS_DIR,
+    MODELS_DIR as DEFAULT_MODELS_DIR,
+    ensure_dir,
+)
+
+ROOT = str(PROJECT_ROOT)
+RUNS_DIR = str(ensure_dir(DEFAULT_RUNS_DIR))
+FEEDBACK_DIR = os.path.join(RUNS_DIR, "feedback")
+TRAIN_DIR = os.path.join(RUNS_DIR, "train")
+MODELS_DIR = os.path.join(ROOT, "models", "credit")
+MODELS_BASE = ensure_dir(DEFAULT_MODELS_DIR)
+MODELS_DIR = os.path.join(str(MODELS_BASE), "trained")
+os.makedirs(MODELS_DIR, exist_ok=True)
+os.makedirs(FEEDBACK_DIR, exist_ok=True)
+os.makedirs(TRAIN_DIR, exist_ok=True)
 FEEDBACK_DIR = os.path.join(RUNS_DIR, "feedback")
 TRAIN_DIR = os.path.join(RUNS_DIR, "train")
 MODELS_DIR = os.path.join(ROOT, "models", "credit")

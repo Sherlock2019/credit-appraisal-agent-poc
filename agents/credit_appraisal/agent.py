@@ -9,7 +9,10 @@ from typing import Any, Dict, List, Tuple
 import numpy as np
 import pandas as pd
 
+from services.paths import RUNS_DIR as DEFAULT_RUNS_DIR, ensure_dir
+
 from .model_utils import ensure_model
+
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -19,6 +22,8 @@ from .model_utils import ensure_model
 def _discover_runs_root() -> str:
     """
     Find services/api/.runs starting from this file's directory, unless RUNS_ROOT env is set.
+    """
+    
     """
     env_root = os.getenv("RUNS_ROOT")
     if env_root:
@@ -30,6 +35,14 @@ def _discover_runs_root() -> str:
     candidate = os.path.join(proj, "services", "api", ".runs")
     os.makedirs(candidate, exist_ok=True)
     return candidate
+    """
+    """Return the shared runs directory honouring ``RUNS_ROOT`` overrides."""
+
+    env_root = os.getenv("RUNS_ROOT")
+    if env_root:
+       return str(ensure_dir(env_root))
+
+    return str(ensure_dir(DEFAULT_RUNS_DIR))
 
 
 RUNS_ROOT = _discover_runs_root()

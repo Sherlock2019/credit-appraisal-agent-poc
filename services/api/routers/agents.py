@@ -11,11 +11,17 @@ import numpy as np
 import pandas as pd
 from fastapi import APIRouter, UploadFile, File, Request, HTTPException
 
+from services.paths import RUNS_DIR as DEFAULT_RUNS_DIR, ensure_dir
+
 router = APIRouter(tags=["agents"])
 
 AGENT_NAME = "credit_appraisal"
-RUNS_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".runs"))
-os.makedirs(RUNS_ROOT, exist_ok=True)
+#RUNS_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".runs"))
+#os.makedirs(RUNS_ROOT, exist_ok=True)
+RUNS_ROOT = str(ensure_dir(DEFAULT_RUNS_DIR))
+
+
+
 
 
 # ─────────────────────────────────────────────

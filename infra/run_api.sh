@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
-cd "/home/dzoan/demo-library/services/api"
+#cd "/home/dzoan/demo-library/services/api"
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT="${ROOT:-$(cd "${SCRIPT_DIR}/.." && pwd)}"
+
+cd "$ROOT/services/api"
 python3 -m venv .venv
 source .venv/bin/activate
 pip install --upgrade pip

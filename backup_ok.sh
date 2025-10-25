@@ -4,47 +4,50 @@ set -euo pipefail
 BACKUP_EXT=".ok.$(date +%Y%m%d-%H%M%S).bak"
 
 FILES=(
-  "/home/dzoan/demo-library/services/ui/app.py"
-  "/home/dzoan/demo-library/services/ui/requirements.txt"
-  "/home/dzoan/demo-library/services/ui/runwebui.sh"
 
-  "/home/dzoan/demo-library/services/api/routers/agents.py"
-  "/home/dzoan/demo-library/services/api/routers/reports.py"
-  "/home/dzoan/demo-library/services/api/routers/settings.py"
-  "/home/dzoan/demo-library/services/api/routers/training.py"
-  "/home/dzoan/demo-library/services/api/routers/system.py"
-  "/home/dzoan/demo-library/services/api/routers/export.py"
-  "/home/dzoan/demo-library/services/api/routers/runs.py"
-  "/home/dzoan/demo-library/services/api/routers/admin.py"
+  "$ROOT/services/ui/app.py"
+  "$ROOT/services/ui/requirements.txt"
+  "$ROOT/services/ui/runwebui.sh"
 
-  "/home/dzoan/demo-library/services/api/main.py"
-  "/home/dzoan/demo-library/services/api/requirements.txt"
-  "/home/dzoan/demo-library/services/api/adapters/__init__.py"
-  "/home/dzoan/demo-library/services/api/adapters/llm_adapters.py"
+  "$ROOT/services/api/routers/agents.py"
+  "$ROOT/services/api/routers/reports.py"
+  "$ROOT/services/api/routers/settings.py"
+  "$ROOT/services/api/routers/training.py"
+  "$ROOT/services/api/routers/system.py"
+  "$ROOT/services/api/routers/export.py"
+  "$ROOT/services/api/routers/runs.py"
+  "$ROOT/services/api/routers/admin.py"
 
-  "/home/dzoan/demo-library/agents/credit_appraisal/agent.py"
-  "/home/dzoan/demo-library/agents/credit_appraisal/model_utils.py"
-  "/home/dzoan/demo-library/agents/credit_appraisal/__init__.py"
-  "/home/dzoan/demo-library/agents/credit_appraisal/agent.yaml"
-  "/home/dzoan/demo-library/agents/credit_appraisal/models/production/meta.json"
+  "$ROOT/services/api/main.py"
+  "$ROOT/services/api/requirements.txt"
+  "$ROOT/services/api/adapters/__init__.py"
+  "$ROOT/services/api/adapters/llm_adapters.py"
 
-  "/home/dzoan/demo-library/agent_platform/agent_sdk/__init__.py"
-  "/home/dzoan/demo-library/agent_platform/agent_sdk/sdk.py"
+  "$ROOT/agents/credit_appraisal/agent.py"
+  "$ROOT/agents/credit_appraisal/model_utils.py"
+  "$ROOT/agents/credit_appraisal/__init__.py"
+  "$ROOT/agents/credit_appraisal/agent.yaml"
+  "$ROOT/agents/credit_appraisal/models/production/meta.json"
 
-  "/home/dzoan/demo-library/services/train/train_credit.py"
-  "/home/dzoan/demo-library/scripts/generate_training_dataset.py"
-  "/home/dzoan/demo-library/scripts/run_e2e.sh"
-  "/home/dzoan/demo-library/infra/run_api.sh"
-  "/home/dzoan/demo-library/Makefile"
-  "/home/dzoan/demo-library/pyproject.toml"
+  "$ROOT/agent_platform/agent_sdk/__init__.py"
+  "$ROOT/agent_platform/agent_sdk/sdk.py"
 
-  "/home/dzoan/demo-library/tests/test_api_e2e.py"
-  "/home/dzoan/demo-library/samples/credit/schema.json"
-  "/home/dzoan/demo-library/agents/credit_appraisal/sample_data/credit_sample.csv"
-  "/home/dzoan/demo-library/agents/credit_appraisal/sample_data/credit_training_sample.csv"
+  "$ROOT/services/train/train_credit.py"
+  "$ROOT/scripts/generate_training_dataset.py"
+  "$ROOT/scripts/run_e2e.sh"
+  "$ROOT/infra/run_api.sh"
+  "$ROOT/Makefile"
+  "$ROOT/pyproject.toml"
+
+  "$ROOT/tests/test_api_e2e.py"
+  "$ROOT/samples/credit/schema.json"
+  "$ROOT/agents/credit_appraisal/sample_data/credit_sample.csv"
+  "$ROOT/agents/credit_appraisal/sample_data/credit_training_sample.csv"
+
 )
 
-echo "==> Backing up important files under: /home/dzoan/demo-library"
+echo "==> Backing up important files under: $ROOT"
+
 echo "==> Backup suffix: ${BACKUP_EXT}"
 echo
 

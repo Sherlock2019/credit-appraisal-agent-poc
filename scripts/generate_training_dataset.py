@@ -1,9 +1,17 @@
 #!/usr/bin/env python3
-import argparse, os, uuid
+#import argparse, os, uuid
+import argparse, sys, uuid
 from pathlib import Path
 import numpy as np, pandas as pd
 
-ROOT = Path.home() / "demo-library"
+#ROOT = Path.home() / "demo-library"
+REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from services.paths import PROJECT_ROOT
+
+ROOT = PROJECT_ROOT
 OUT_DIR = ROOT / "agents" / "credit_appraisal" / "sample_data"
 OUT_DIR.mkdir(parents=True, exist_ok=True)
 

@@ -6,7 +6,11 @@ import os
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse, JSONResponse, FileResponse
 
-RUNS_DIR = os.path.expanduser("~/demo-library/services/api/.runs")
+#RUNS_DIR = os.path.expanduser("~/demo-library/services/api/.runs")
+from services.paths import RUNS_DIR as DEFAULT_RUNS_DIR, ensure_dir
+
+RUNS_DIR = str(ensure_dir(DEFAULT_RUNS_DIR))
+
 router = APIRouter()
 
 def _run_dir(run_id: str) -> str:

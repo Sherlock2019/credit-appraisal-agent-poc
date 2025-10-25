@@ -8,11 +8,17 @@ from typing import Literal
 from fastapi import APIRouter, HTTPException, Path, Query
 from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
 
-ROOT = os.path.expanduser("~/demo-library")
-RUNS_ROOT = os.path.join(ROOT, "services", "api", ".runs")
-os.makedirs(RUNS_ROOT, exist_ok=True)
+#ROOT = os.path.expanduser("~/demo-library")
+#RUNS_ROOT = os.path.join(ROOT, "services", "api", ".runs")
+#os.makedirs(RUNS_ROOT, exist_ok=True)
+from services.paths import RUNS_DIR as DEFAULT_RUNS_DIR, ensure_dir
+
+RUNS_ROOT = str(ensure_dir(DEFAULT_RUNS_DIR))
 
 router = APIRouter(prefix="/v1/runs", tags=["runs"])
+from services.paths import RUNS_DIR as DEFAULT_RUNS_DIR, ensure_dir
+
+RUNS_DIR = str(ensure_dir(DEFAULT_RUNS_DIR))
 
 
 def _find_run_dir(run_id: str) -> str:

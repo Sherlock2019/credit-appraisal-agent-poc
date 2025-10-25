@@ -2,7 +2,9 @@
 set -euo pipefail
 
 # Project root
-ROOT="${ROOT:-$HOME/demo-library}"
+#ROOT="${ROOT:-$HOME/demo-library}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT="${ROOT:-$(cd "${SCRIPT_DIR}/.." && pwd)}"
 API_PORT="${API_PORT:-8090}"
 UI_PORT="${UI_PORT:-8502}"
 

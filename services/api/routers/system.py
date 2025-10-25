@@ -3,11 +3,13 @@ from __future__ import annotations
 import os, json, time
 from typing import List, Dict, Any
 from fastapi import APIRouter
+from services.paths import MODELS_DIR as DEFAULT_MODELS_DIR, ensure_dir
 
 router = APIRouter(tags=["system"])
 
-ROOT = os.path.expanduser("~/demo-library")
-MODELS_DIR = os.path.join(ROOT, "agents", "credit_appraisal", "models")
+#ROOT = os.path.expanduser("~/demo-library")
+#MODELS_DIR = os.path.join(ROOT, "agents", "credit_appraisal", "models")
+MODELS_DIR = str(ensure_dir(DEFAULT_MODELS_DIR))
 PROD_DIR = os.path.join(MODELS_DIR, "production")
 TRAINED_DIR = os.path.join(MODELS_DIR, "trained")
 

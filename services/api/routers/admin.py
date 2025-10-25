@@ -5,17 +5,27 @@ from typing import Optional, Dict, Any
 from fastapi import APIRouter, HTTPException, Form
 from fastapi.responses import FileResponse, JSONResponse
 
+
+from services.paths import (
+    PROJECT_ROOT,
+    RUNS_DIR as DEFAULT_RUNS_DIR,
+    MODELS_DIR as DEFAULT_MODELS_DIR,
+    ensure_dir,
+)
+
+
 router = APIRouter(prefix="/v1/admin", tags=["admin"])
 
-ROOT = os.path.expanduser("~/demo-library")
-RUNS_DIR = os.path.join(ROOT, "services", "api", ".runs")
+#ROOT = os.path.expanduser("~/demo-library")
+#RUNS_DIR = os.path.join(ROOT, "services", "api", ".runs")
 EXPORTS_DIR = os.path.join(RUNS_DIR, "exports")
 SNAP_DIR = os.path.join(RUNS_DIR, "snapshots")
 AGENT_DIR = os.path.join(ROOT, "agents", "credit_appraisal")
-MODELS_DIR = os.path.join(AGENT_DIR, "models")
+#ODELS_DIR = os.path.join(AGENT_DIR, "models")
+MODELS_DIR = str(ensure_dir(DEFAULT_MODELS_DIR))
 PROD_DIR = os.path.join(MODELS_DIR, "production")
 
-os.makedirs(RUNS_DIR, exist_ok=True)
+#os.makedirs(RUNS_DIR, exist_ok=True)
 os.makedirs(EXPORTS_DIR, exist_ok=True)
 os.makedirs(SNAP_DIR, exist_ok=True)
 os.makedirs(PROD_DIR, exist_ok=True)

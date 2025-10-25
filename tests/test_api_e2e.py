@@ -10,7 +10,8 @@ What this covers:
 - Sanity checks on CSVs and required columns
 
 How to run:
-  cd ~/demo-library
+  
+cd /path/to/credit-appraisal-agent-poc
   source services/api/.venv/bin/activate
   pytest -q tests/test_api_e2e.py
 
