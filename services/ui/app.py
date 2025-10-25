@@ -268,9 +268,90 @@ with agent_col:
             st.success(f"✅ Updated {selected_agent} icon")
 
 # Table
-rows = []
-for sector, industry, agent, desc, status, emoji in AGENTS:
+st.markdown("### 📊 Global View of All AI Agents")
+
+header_cols = st.columns([1.1, 1.1, 2.0, 2.0, 2.8, 1.4, 1.0, 1.0, 1.0])
+header_labels = [
+    "Agent Art",
+    "Industry Art",
+    "🏭 Sector",
+    "🧩 Industry",
+    "🤖 Agent",
+    "🧠 Description",
+    "📶 Status",
+    "⭐ Rating",
+    "👥 Users / 💬 Comments",
+]
+for col, label in zip(header_cols, header_labels):
+    col.markdown(f"**{label}**")
+
+for idx, (sector, industry, agent, desc, status, emoji) in enumerate(AGENTS):
+    row_cols = st.columns([1.1, 1.1, 2.0, 2.0, 2.8, 1.4, 1.0, 1.0, 1.0])
+
+    agent_key = sanitize_image_key(agent)
+    industry_key = sanitize_image_key(industry)
+    agent_path = _first_existing_image(agent_key)
+    industry_path = _first_existing_image(industry_key)
+
+    with row_cols[0]:
+        if not display_image_preview(agent_path, f"{agent} icon", max_height=86):
+            st.markdown(
+                f"<div style='font-size:32px;text-align:center;line-height:1.1;'>{emoji}</div>",
+                unsafe_allow_html=True,
+            )
+        agent_upload = st.file_uploader(
+            "Agent image",
+            type=IMAGE_UPLOAD_TYPES,
+            key=f"agent_upload_{idx}",
+            label_visibility="collapsed",
+        )
+        if agent_upload is not None:
+            saved = save_uploaded_image(agent_upload, agent_key)
+            if saved:
+                st.success("Updated agent art")
+                display_image_preview(saved, f"{agent} icon", max_height=86)
+
+    with row_cols[1]:
+        if not display_image_preview(industry_path, f"{industry} art", max_height=86):
+            st.markdown(
+                "<div style='font-size:28px;text-align:center;line-height:1.1;'>🖼️</div>",
+                unsafe_allow_html=True,
+            )
+        industry_upload = st.file_uploader(
+            "Industry image",
+            type=IMAGE_UPLOAD_TYPES,
+            key=f"industry_upload_{idx}",
+            label_visibility="collapsed",
+        )
+        if industry_upload is not None:
+            saved = save_uploaded_image(industry_upload, industry_key)
+            if saved:
+                st.success("Updated industry art")
+                display_image_preview(saved, f"{industry} art", max_height=86)
+
+    with row_cols[2]:
+        st.markdown(f"**{sector}**")
+
+    with row_cols[3]:
+        st.markdown(f"**{industry}**")
+
+    with row_cols[4]:
+        st.markdown(f"**{agent}**")
+
+    with row_cols[5]:
+        st.markdown(desc)
+
+    with row_cols[6]:
+        st.markdown(
+            f"<span class='status-{status.replace(' ', '')}'>{status}</span>",
+            unsafe_allow_html=True,
+        )
+
     rating = round(random.uniform(3.5, 5.0), 1)
+    rating_str = "⭐" * int(rating) + "☆" * (5 - int(rating))
+    with row_cols[7]:
+        st.markdown(rating_str)
+
     users = random.randint(800, 9000)
     comments = random.randint(5, 120)
     image_html = render_image_tag(sanitize_image_key(agent), industry, emoji)
@@ -520,6 +601,126 @@ def set_currency_defaults():
     st.session_state["currency_fx"] = fx
 
 set_currency_defaults()
+
+# ─────────────────────────────────────────────
+# DATA GENERATORS
+
+
+def generate_raw_synthetic(n: int, non_bank_ratio: float) -> pd.DataFrame:
+    rng = np.random.default_rng(42)
+    names = ["Alice Nguyen","Bao Tran","Chris Do","Duy Le","Emma Tran",
+             "Felix Nguyen","Giang Ho","Hanh Vo","Ivan Pham","Julia Ngo"]
+    emails = [f"{n.split()[0].lower()}.{n.split()[1].lower()}@gmail.com" for n in names]
+    addrs = [
+        "23 Elm St, Boston, MA","19 Pine Ave, San Jose, CA","14 High St, London, UK",
+        "55 Nguyen Hue, Ho Chi Minh","78 Oak St, Chicago, IL","10 Broadway, New York, NY",
+        "8 Rue Lafayette, Paris, FR","21 Königstr, Berlin, DE","44 Maple Dr, Los Angeles, CA","22 Bay St, Toronto, CA"
+    ]
+    is_non = rng.random(n) < non_bank_ratio
+    cust_type = np.where(is_non, "non-bank", "bank")
+
+    df = pd.DataFrame({
+        "application_id": [f"APP_{i:04d}" for i in range(1, n + 1)],
+        "customer_name": np.random.choice(names, n),
+        "email": np.random.choice(emails, n),
+        "phone": [f"+1-202-555-{1000+i:04d}" for i in range(n)],
+        "address": np.random.choice(addrs, n),
+        "national_id": rng.integers(10_000_000, 99_999_999, n),
+        "age": rng.integers(21, 65, n),
+        "income": rng.integers(25_000, 150_000, n),
+        "employment_length": rng.integers(0, 30, n),
+        "loan_amount": rng.integers(5_000, 100_000, n),
+        "loan_duration_months": rng.choice([12, 24, 36, 48, 60, 72], n),
+        "collateral_value": rng.integers(8_000, 200_000, n),
+        "collateral_type": rng.choice(["real_estate","car","land","deposit"], n),
+        "co_loaners": rng.choice([0,1,2], n, p=[0.7, 0.25, 0.05]),
+        "credit_score": rng.integers(300, 850, n),
+        "existing_debt": rng.integers(0, 50_000, n),
+        "assets_owned": rng.integers(10_000, 300_000, n),
+        "current_loans": rng.integers(0, 5, n),
+        "loan_history_unpaid": rng.poisson(0.4, n),
+        "loan_history_late_payments": rng.poisson(1.5, n),
+        "customer_type": cust_type,
+    })
+    eps = 1e-9
+    df["DTI"] = df["existing_debt"] / (df["income"] + eps)
+    df["LTV"] = df["loan_amount"] / (df["collateral_value"] + eps)
+    df["CCR"] = df["collateral_value"] / (df["loan_amount"] + eps)
+    df["ITI"] = (df["loan_amount"] / (df["loan_duration_months"] + eps)) / (df["income"] + eps)
+    df["CWI"] = ((1 - df["DTI"]).clip(0, 1)) * ((1 - df["LTV"]).clip(0, 1)) * (df["CCR"].clip(0, 3))
+
+    fx = st.session_state["currency_fx"]
+    for c in ("income", "loan_amount", "collateral_value", "assets_owned", "existing_debt"):
+        df[c] = (df[c] * fx).round(2)
+    df["currency_code"] = st.session_state["currency_code"]
+    return dedupe_columns(df)
+
+
+def generate_anon_synthetic(n: int, non_bank_ratio: float) -> pd.DataFrame:
+    rng = np.random.default_rng(42)
+    is_non = rng.random(n) < non_bank_ratio
+    cust_type = np.where(is_non, "non-bank", "bank")
+
+    df = pd.DataFrame({
+        "application_id": [f"APP_{i:04d}" for i in range(1, n + 1)],
+        "age": rng.integers(21, 65, n),
+        "income": rng.integers(25_000, 150_000, n),
+        "employment_length": rng.integers(0, 30, n),
+        "loan_amount": rng.integers(5_000, 100_000, n),
+        "loan_duration_months": rng.choice([12, 24, 36, 48, 60, 72], n),
+        "collateral_value": rng.integers(8_000, 200_000, n),
+        "collateral_type": rng.choice(["real_estate","car","land","deposit"], n),
+        "co_loaners": rng.choice([0,1,2], n, p=[0.7, 0.25, 0.05]),
+        "credit_score": rng.integers(300, 850, n),
+        "existing_debt": rng.integers(0, 50_000, n),
+        "assets_owned": rng.integers(10_000, 300_000, n),
+        "current_loans": rng.integers(0, 5, n),
+        "loan_history_unpaid": rng.poisson(0.4, n),
+        "loan_history_late_payments": rng.poisson(1.5, n),
+        "customer_type": cust_type,
+    })
+    eps = 1e-9
+    df["DTI"] = df["existing_debt"] / (df["income"] + eps)
+    df["LTV"] = df["loan_amount"] / (df["collateral_value"] + eps)
+    df["CCR"] = df["collateral_value"] / (df["loan_amount"] + eps)
+    df["ITI"] = (df["loan_amount"] / (df["loan_duration_months"] + eps)) / (df["income"] + eps)
+    df["CWI"] = ((1 - df["DTI"]).clip(0, 1)) * ((1 - df["LTV"]).clip(0, 1)) * (df["CCR"].clip(0, 3))
+
+    fx = st.session_state["currency_fx"]
+    for c in ("income", "loan_amount", "collateral_value", "assets_owned", "existing_debt"):
+        df[c] = (df[c] * fx).round(2)
+    df["currency_code"] = st.session_state["currency_code"]
+    return dedupe_columns(df)
+
+
+def to_agent_schema(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Harmonize to the server-side agent’s expected schema.
+    """
+
+    out = df.copy()
+    n = len(out)
+    if "employment_years" not in out.columns:
+        out["employment_years"] = out.get("employment_length", 0)
+    if "debt_to_income" not in out.columns:
+        if "DTI" in out.columns:
+            out["debt_to_income"] = out["DTI"].astype(float)
+        elif "existing_debt" in out.columns and "income" in out.columns:
+            denom = out["income"].replace(0, np.nan)
+            dti = (out["existing_debt"] / denom).fillna(0.0)
+            out["debt_to_income"] = dti.clip(0, 10)
+        else:
+            out["debt_to_income"] = 0.0
+    rng = np.random.default_rng(12345)
+    if "credit_history_length" not in out.columns:
+        out["credit_history_length"] = rng.integers(0, 30, n)
+    if "num_delinquencies" not in out.columns:
+        out["num_delinquencies"] = np.minimum(rng.poisson(0.2, n), 10)
+    if "requested_amount" not in out.columns:
+        out["requested_amount"] = out.get("loan_amount", 0)
+    if "loan_term_months" not in out.columns:
+        out["loan_term_months"] = out.get("loan_duration_months", 0)
+    return dedupe_columns(out)
 
 # ─────────────────────────────────────────────
 # DASHBOARD HELPERS (Plotly, dark theme)
@@ -951,16 +1152,15 @@ def render_panel_navigation(current_key: str, panel_order: List[Tuple[str, str]]
     df["ITI"] = (df["loan_amount"] / (df["loan_duration_months"] + eps)) / (df["income"] + eps)
     df["CWI"] = ((1 - df["DTI"]).clip(0, 1)) * ((1 - df["LTV"]).clip(0, 1)) * (df["CCR"].clip(0, 3))
 
-    fx = st.session_state["currency_fx"]
-    for c in ("income", "loan_amount", "collateral_value", "assets_owned", "existing_debt"):
-        df[c] = (df[c] * fx).round(2)
-    df["currency_code"] = st.session_state["currency_code"]
-    return dedupe_columns(df)
+    key_to_index = {key: idx for idx, (key, _) in enumerate(panel_order)}
+    idx = key_to_index[current_key]
+    prev_key = panel_order[idx - 1][0] if idx > 0 else None
+    next_key = panel_order[idx + 1][0] if idx < len(panel_order) - 1 else None
 
-def generate_anon_synthetic(n: int, non_bank_ratio: float) -> pd.DataFrame:
-    rng = np.random.default_rng(42)
-    is_non = rng.random(n) < non_bank_ratio
-    cust_type = np.where(is_non, "non-bank", "bank")
+    def _set_active(target_key: str) -> None:
+        st.session_state["active_panel"] = target_key
+        label_map = {key: label for key, label in panel_order}
+        st.session_state["main_panel_selector"] = label_map[target_key]
 
     df = pd.DataFrame({
         "application_id": [f"APP_{i:04d}" for i in range(1, n + 1)],
