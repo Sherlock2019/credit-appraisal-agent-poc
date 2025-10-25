@@ -3,7 +3,9 @@
 # 🌐 OpenSource AI Agent Library + Credit Appraisal PoC
 # ─────────────────────────────────────────────
 from __future__ import annotations
-import os, re, io, json, time, datetime, random
+import os, re, io, json, time, datetime, random, html, warnings
+from pathlib import Path
+from functools import wraps
 from typing import Any, Dict, List, Optional, Tuple
 import numpy as np, pandas as pd, streamlit as st
 import os
@@ -41,6 +43,40 @@ IMAGE_EXTS = [".png", ".jpg", ".jpeg", ".webp", ".gif", ".svg"]
 os.makedirs(TMP_FEEDBACK_DIR, exist_ok=True)
 
 st.set_page_config(page_title="OpenSource AI Agent Library", layout="wide")
+
+
+def _patch_streamlit_image_deprecation() -> None:
+    """Shim ``use_column_width`` -> ``use_container_width`` for ``st.image`` APIs."""
+
+    def _wrap(func):
+        @wraps(func)
+        def inner(*args, **kwargs):
+            if "use_column_width" in kwargs:
+                value = kwargs.pop("use_column_width")
+                kwargs.setdefault("use_container_width", value)
+            return func(*args, **kwargs)
+
+        inner.__patched_use_container__ = True  # type: ignore[attr-defined]
+        return inner
+
+    if not getattr(st.image, "__patched_use_container__", False):
+        st.image = _wrap(st.image)
+
+    sidebar = getattr(st, "sidebar", None)
+    if sidebar is not None:
+        sidebar_image = getattr(sidebar, "image", None)
+        if sidebar_image is not None and not getattr(
+            sidebar_image, "__patched_use_container__", False
+        ):
+            sidebar.image = _wrap(sidebar_image)  # type: ignore[assignment]
+
+
+warnings.filterwarnings(
+    "ignore",
+    message="The use_column_width parameter has been deprecated",
+    category=DeprecationWarning,
+)
+_patch_streamlit_image_deprecation()
 # ─────────────────────────────────────────────
 # HELPERS
 # ─────────────────────────────────────────────
@@ -95,6 +131,34 @@ def render_image_tag(agent_id: str, industry: str, emoji_fallback: str) -> str:
     else:
         return f'<div style="font-size:28px;">{emoji_fallback}</div>'
 
+
+def _to_file_uri(path: Path) -> str:
+    try:
+        return path.resolve().as_uri()
+    except ValueError:
+        # Fallback to manual prefix if drive letters or UNC paths cause issues
+        return f"file://{path}"
+
+
+def display_image_preview(path: Optional[str], caption: str, max_height: int = 180) -> bool:
+    if not path:
+        return False
+    file_path = Path(path)
+    if not file_path.exists():
+        return False
+    uri = _to_file_uri(file_path)
+    safe_caption = html.escape(caption)
+    st.markdown(
+        f"""
+        <figure style="margin:0;">
+            <img src="{uri}" style="max-width:100%;height:auto;max-height:{max_height}px;border-radius:12px;object-fit:contain;" />
+            <figcaption style="font-size:12px;color:#94a3b8;margin-top:4px;">{safe_caption}</figcaption>
+        </figure>
+        """,
+        unsafe_allow_html=True,
+    )
+    return True
+
 # ─────────────────────────────────────────────
 # DATA: SECTORS / INDUSTRIES / AGENTS
 # ─────────────────────────────────────────────
@@ -142,6 +206,7 @@ with hero_col:
     st.markdown("**Top landing hero**")
     current_hero = _first_existing_image(LANDING_HERO_BASENAME)
     if current_hero:
+        display_image_preview(current_hero, "Current landing hero")
         st.image(current_hero, caption="Current landing hero", use_column_width=True)
     hero_upload = st.file_uploader(
         "Upload hero image",
@@ -161,6 +226,7 @@ with industry_col:
     industry_key = sanitize_image_key(selected_industry)
     current_industry_image = _first_existing_image(industry_key)
     if current_industry_image:
+        display_image_preview(current_industry_image, "Current industry image")
         st.image(current_industry_image, caption="Current industry image", use_column_width=True)
     industry_upload = st.file_uploader(
         "Upload industry image",
@@ -180,6 +246,7 @@ with agent_col:
     agent_key = sanitize_image_key(selected_agent)
     current_agent_image = _first_existing_image(agent_key)
     if current_agent_image:
+        display_image_preview(current_agent_image, "Current agent image")
         st.image(current_agent_image, caption="Current agent image", use_column_width=True)
     agent_upload = st.file_uploader(
         "Upload agent image",
@@ -300,6 +367,7 @@ with st.container():
     current_logo_path = st.session_state.get("company_logo_path")
     with logo_col_preview:
         if current_logo_path and os.path.exists(current_logo_path):
+            display_image_preview(current_logo_path, "Current logo", max_height=140)
             st.image(current_logo_path, caption="Current logo", width=160)
         else:
             st.info("Upload a logo to personalise reports.")
