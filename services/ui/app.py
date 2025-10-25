@@ -32,26 +32,60 @@ import plotly.graph_objects as go
 # CONFIG
 # ─────────────────────────────────────────────
 API_URL = os.getenv("API_URL", "http://localhost:8090")
-#RUNS_DIR = os.path.expanduser("~/demo-library/services/api/.runs")
 RUNS_DIR = str(ensure_dir(DEFAULT_RUNS_DIR))
 TMP_FEEDBACK_DIR = os.path.join(RUNS_DIR, "tmp_feedback")
-#LANDING_IMG_DIR = os.path.expanduser("~/demo-library/services/ui/landing_images")
-#os.makedirs(RUNS_DIR, exist_ok=True)
 LANDING_IMG_DIR = str(ensure_dir(DEFAULT_LANDING_IMG_DIR))
+COMPANY_LOGO_DIR = str(ensure_dir(os.path.join(LANDING_IMG_DIR, "company_logos")))
+LANDING_HERO_BASENAME = "landing_hero"
+IMAGE_EXTS = [".png", ".jpg", ".jpeg", ".webp", ".gif", ".svg"]
 os.makedirs(TMP_FEEDBACK_DIR, exist_ok=True)
-#os.makedirs(LANDING_IMG_DIR, exist_ok=True)
 
 st.set_page_config(page_title="OpenSource AI Agent Library", layout="wide")
 # ─────────────────────────────────────────────
 # HELPERS
 # ─────────────────────────────────────────────
+def sanitize_image_key(name: str) -> str:
+    safe = re.sub(r"[^A-Za-z0-9_-]+", "_", str(name).strip().lower())
+    safe = re.sub(r"_+", "_", safe).strip("_")
+    return safe or "image"
+
+
+def _first_existing_image(base: str, directory: str = LANDING_IMG_DIR) -> Optional[str]:
+    for ext in IMAGE_EXTS:
+        path = os.path.join(directory, f"{base}{ext}")
+        if os.path.exists(path):
+            return path
+    return None
+
+
+def _remove_existing_image_variants(base: str, directory: str = LANDING_IMG_DIR) -> None:
+    for ext in IMAGE_EXTS:
+        try:
+            os.remove(os.path.join(directory, f"{base}{ext}"))
+        except FileNotFoundError:
+            continue
+
+
+def save_uploaded_image(uploaded_file, base: str, directory: str = LANDING_IMG_DIR) -> Optional[str]:
+    if uploaded_file is None:
+        return None
+    base = sanitize_image_key(base)
+    ext = os.path.splitext(uploaded_file.name)[1].lower()
+    if ext not in IMAGE_EXTS:
+        ext = ".png"
+    _remove_existing_image_variants(base, directory)
+    dest = os.path.join(directory, f"{base}{ext}")
+    with open(dest, "wb") as f:
+        f.write(uploaded_file.getvalue())
+    return dest
+
+
 def load_image_for(agent_id: str, industry: str) -> Optional[str]:
     """Prefer agent image, fallback to industry placeholder."""
-    for base in [agent_id, industry.replace(" ", "_")]:
-        for ext in [".png", ".jpg", ".jpeg", ".webp", ".gif", ".svg"]:
-            path = os.path.join(LANDING_IMG_DIR, f"{base}{ext}")
-            if os.path.exists(path):
-                return path
+    for base in [agent_id, sanitize_image_key(industry)]:
+        found = _first_existing_image(base)
+        if found:
+            return found
     return None
 
 def render_image_tag(agent_id: str, industry: str, emoji_fallback: str) -> str:
@@ -101,16 +135,62 @@ st.title("🌐 OpenSource AI Agent Library")
 st.caption("Explore sectors, industries, and ready-to-use AI agents — including the **Credit Appraisal Agent** demo below.")
 
 # Upload area
-st.markdown("### 🖼️ Upload or Replace Industry / Agent Image")
-uploaded = st.file_uploader("Upload image (.jpg, .png, .webp, .gif, .svg)", type=["jpg","png","webp","gif","svg"])
-if uploaded:
-    fname = st.text_input("Save image as (agent or industry name, no spaces):", "")
-    if fname:
-        ext = os.path.splitext(uploaded.name)[1]
-        path = os.path.join(LANDING_IMG_DIR, f"{fname}{ext or '.png'}")
-        with open(path, "wb") as f:
-            f.write(uploaded.getvalue())
-        st.success(f"✅ Saved to {path}")
+st.markdown("### 🖼️ Landing Imagery Manager")
+hero_col, industry_col, agent_col = st.columns(3)
+
+with hero_col:
+    st.markdown("**Top landing hero**")
+    current_hero = _first_existing_image(LANDING_HERO_BASENAME)
+    if current_hero:
+        st.image(current_hero, caption="Current landing hero", use_container_width=True)
+    hero_upload = st.file_uploader(
+        "Upload hero image",
+        type=["jpg", "png", "webp", "gif", "svg"],
+        key="hero_image_upload",
+        label_visibility="collapsed",
+    )
+    if hero_upload is not None:
+        saved_path = save_uploaded_image(hero_upload, LANDING_HERO_BASENAME)
+        if saved_path:
+            st.success(f"✅ Landing hero saved to {saved_path}")
+
+with industry_col:
+    st.markdown("**Industry thumbnails**")
+    industry_options = sorted({industry for _, industry, _, _, _, _ in AGENTS})
+    selected_industry = st.selectbox("Choose industry", industry_options, key="industry_image_select")
+    industry_key = sanitize_image_key(selected_industry)
+    current_industry_image = _first_existing_image(industry_key)
+    if current_industry_image:
+        st.image(current_industry_image, caption="Current industry image", use_container_width=True)
+    industry_upload = st.file_uploader(
+        "Upload industry image",
+        type=["jpg", "png", "webp", "gif", "svg"],
+        key="industry_image_upload",
+        label_visibility="collapsed",
+    )
+    if industry_upload is not None:
+        saved_path = save_uploaded_image(industry_upload, industry_key)
+        if saved_path:
+            st.success(f"✅ Updated {selected_industry} image")
+
+with agent_col:
+    st.markdown("**Agent icons**")
+    agent_options = sorted({agent for _, _, agent, _, _, _ in AGENTS})
+    selected_agent = st.selectbox("Choose agent", agent_options, key="agent_image_select")
+    agent_key = sanitize_image_key(selected_agent)
+    current_agent_image = _first_existing_image(agent_key)
+    if current_agent_image:
+        st.image(current_agent_image, caption="Current agent image", use_container_width=True)
+    agent_upload = st.file_uploader(
+        "Upload agent image",
+        type=["jpg", "png", "webp", "gif", "svg"],
+        key="agent_image_upload",
+        label_visibility="collapsed",
+    )
+    if agent_upload is not None:
+        saved_path = save_uploaded_image(agent_upload, agent_key)
+        if saved_path:
+            st.success(f"✅ Updated {selected_agent} icon")
 
 # Table
 rows = []
@@ -118,7 +198,7 @@ for sector, industry, agent, desc, status, emoji in AGENTS:
     rating = round(random.uniform(3.5, 5.0), 1)
     users = random.randint(800, 9000)
     comments = random.randint(5, 120)
-    image_html = render_image_tag(agent.lower().replace(" ", "_"), industry, emoji)
+    image_html = render_image_tag(sanitize_image_key(agent), industry, emoji)
     rows.append({
         "🖼️": image_html,
         "🏭 Sector": sector,
@@ -177,7 +257,14 @@ with st.container():
     if "logged_in" not in st.session_state:
         st.session_state.logged_in = False
     if "user_info" not in st.session_state:
-        st.session_state.user_info = {}
+        st.session_state.user_info = {
+            "name": "",
+            "email": "",
+            "flagged": False,
+            "timestamp": "",
+        }
+    if "company_logo_path" not in st.session_state:
+        st.session_state.company_logo_path = None
 
     # Login handler
     if login_btn:
@@ -189,6 +276,10 @@ with st.container():
                 "flagged": False,
                 "timestamp": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             }
+            logo_base = sanitize_image_key(username or email)
+            existing_logo = _first_existing_image(logo_base, COMPANY_LOGO_DIR)
+            if existing_logo:
+                st.session_state.company_logo_path = existing_logo
             st.success(f"✅ Logged in as {username}")
         else:
             st.error("Please enter both username and email to continue.")
@@ -198,10 +289,39 @@ with st.container():
         st.warning("You must log in to continue.")
         st.stop()
 
-# Short aliases for backward compatibility
-user_name = st.session_state.user_info.get("name", "")
-user_email = st.session_state.user_info.get("email", "")
-flag_session = st.session_state.user_info.get("flagged", False)
+user_info = st.session_state.get("user_info", {})
+user_name = user_info.get("name", "")
+user_email = user_info.get("email", "")
+flag_session = user_info.get("flagged", False)
+
+with st.container():
+    st.markdown("#### 🏢 Company Branding")
+    logo_col_preview, logo_col_upload = st.columns([1, 2])
+    current_logo_path = st.session_state.get("company_logo_path")
+    with logo_col_preview:
+        if current_logo_path and os.path.exists(current_logo_path):
+            st.image(current_logo_path, caption="Current logo", width=160)
+        else:
+            st.info("Upload a logo to personalise reports.")
+    with logo_col_upload:
+        logo_upload = st.file_uploader(
+            "Upload company logo",
+            type=["png", "jpg", "jpeg", "webp", "svg"],
+            key="company_logo_upload",
+        )
+        if logo_upload is not None:
+            base_name = sanitize_image_key(user_name or user_email or "company")
+            saved_logo = save_uploaded_image(logo_upload, base_name, COMPANY_LOGO_DIR)
+            if saved_logo:
+                st.session_state.company_logo_path = saved_logo
+                st.success(f"✅ Company logo saved to {saved_logo}")
+        if current_logo_path and st.button("Remove logo", key="remove_company_logo"):
+            _remove_existing_image_variants(
+                sanitize_image_key(user_name or user_email or "company"),
+                COMPANY_LOGO_DIR,
+            )
+            st.session_state.company_logo_path = None
+            st.info("Company logo removed.")
 
 
 # ─────────────────────────────────────────────
@@ -242,17 +362,18 @@ def strip_policy_banned(df: pd.DataFrame) -> pd.DataFrame:
     return df[keep]
 
 def append_user_info(df: pd.DataFrame) -> pd.DataFrame:
-    meta = st.session_state["user_info"]
+    meta = st.session_state.get("user_info", {})
     out = df.copy()
-    out["session_user_name"] = meta["name"]
-    out["session_user_email"] = meta["email"]
-    out["session_flagged"] = meta["flagged"]
-    out["created_at"] = meta["timestamp"]
+    out["session_user_name"] = meta.get("name", "")
+    out["session_user_email"] = meta.get("email", "")
+    out["session_flagged"] = meta.get("flagged", False)
+    out["created_at"] = meta.get("timestamp", "")
     return dedupe_columns(out)
 
 def save_to_runs(df: pd.DataFrame, prefix: str) -> str:
     ts = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M")
-    flag_suffix = "_FLAGGED" if st.session_state["user_info"]["flagged"] else ""
+    flagged = st.session_state.get("user_info", {}).get("flagged", False)
+    flag_suffix = "_FLAGGED" if flagged else ""
     fname = f"{prefix}_{ts}{flag_suffix}.csv"
     fpath = os.path.join(RUNS_DIR, fname)
     dedupe_columns(df).to_csv(fpath, index=False)
@@ -277,6 +398,26 @@ def _safe_json(x):
         except Exception:
             return {}
     return {}
+
+
+@st.cache_data(ttl=120)
+def fetch_available_models(api_url: str) -> List[Tuple[str, str]]:
+    options: List[Tuple[str, str]] = []
+    seen: set[str] = set()
+    for label, kind in [("Production", "production"), ("Trained", "trained")]:
+        try:
+            resp = requests.get(f"{api_url}/v1/training/list_models", params={"kind": kind}, timeout=5)
+            if not resp.ok:
+                continue
+            data = resp.json() or {}
+            for name in data.get("models", []) or []:
+                if not name or name in seen:
+                    continue
+                options.append((f"{label}: {name}", name))
+                seen.add(name)
+        except Exception:
+            continue
+    return options
 
 def fmt_currency_label(base: str) -> str:
     sym = st.session_state.get("currency_symbol", "")
@@ -328,7 +469,34 @@ def render_credit_dashboard(df: pd.DataFrame, currency_symbol: str = ""):
         st.info("No data to visualize yet.")
         return
 
+    df = df.copy()
     cols = df.columns
+    term_col = "loan_term_months" if "loan_term_months" in cols else ("loan_duration_months" if "loan_duration_months" in cols else None)
+
+    def _coerce_float(value: Any, default: float = 0.0) -> float:
+        try:
+            if value in (None, "", "nan"):
+                return default
+            return float(value)
+        except Exception:
+            return default
+
+    def _estimate_roi(row: pd.Series) -> float:
+        loan_amt = _coerce_float(row.get("loan_amount"), 0.0)
+        if loan_amt <= 0:
+            return 0.0
+        score = np.clip(_coerce_float(row.get("score"), 0.5), 0.0, 1.0)
+        dti = np.clip(_coerce_float(row.get("DTI"), 0.0), 0.0, 1.5)
+        collateral = _coerce_float(row.get("collateral_value"), loan_amt)
+        coverage = np.clip(collateral / (loan_amt + 1e-6), 0.2, 2.0)
+        months = max(_coerce_float(row.get(term_col), 12.0) if term_col else 12.0, 6.0)
+        years = months / 12.0
+        base_rate = 0.06 + (score * 0.05)
+        risk_discount = 1.0 - min(dti, 1.0) * 0.35
+        expected_interest = loan_amt * base_rate * years
+        return max(expected_interest * risk_discount * coverage, 0.0)
+
+    df["estimated_roi"] = df.apply(_estimate_roi, axis=1)
 
     # ─────────────── TOP 10s FIRST ───────────────
     st.markdown("## 🔝 Top 10 Snapshot")
@@ -346,6 +514,11 @@ def render_credit_dashboard(df: pd.DataFrame, currency_symbol: str = ""):
                 title="Top 10 Approved Loans",
                 labels={"loan_amount": f"Loan Amount {currency_symbol}", "application_id": "Application"},
             )
+            fig.update_traces(
+                text=top_approved["loan_amount"].apply(lambda v: f"{currency_symbol}{v:,.0f}" if currency_symbol else f"{v:,.0f}"),
+                textposition="outside",
+            )
+            fig.update_yaxes(autorange="reversed")
             fig.update_layout(margin=dict(l=10, r=10, t=50, b=10), height=420, template="plotly_dark")
             st.plotly_chart(fig, use_container_width=True)
         else:
@@ -394,28 +567,34 @@ def render_credit_dashboard(df: pd.DataFrame, currency_symbol: str = ""):
         else:
             st.info("No denial reasons detected.")
 
-    # Top 10 loan officer performance (approval rate) if officer column present
+    # Top 10 loan officers by number of approved loans
     officer_col = None
     for guess in ("loan_officer", "officer", "reviewed_by", "session_user_name"):
         if guess in cols:
             officer_col = guess
             break
     if officer_col and "decision" in cols:
-        perf = (
-            df.assign(is_approved=(df["decision"].astype(str).str.lower() == "approved").astype(int))
-              .groupby(officer_col, dropna=False)["is_approved"]
-              .agg(approved_rate="mean", n="count")
-              .reset_index()
+        officer_df = df.assign(
+            is_approved=(df["decision"].astype(str).str.lower() == "approved").astype(int)
         )
-        if not perf.empty:
-            perf["approved_rate_pct"] = (perf["approved_rate"] * 100).round(1)
-            perf = perf.sort_values(["approved_rate_pct", "n"], ascending=[False, False]).head(10)
+        grouped = (
+            officer_df.groupby(officer_col, dropna=False)["is_approved"]
+            .agg(approved_loans="sum", total_reviewed="count")
+            .reset_index()
+        )
+        grouped = grouped[grouped["approved_loans"] > 0]
+        if not grouped.empty:
+            grouped = grouped.sort_values(["approved_loans", "total_reviewed"], ascending=[False, False]).head(10)
             fig = px.bar(
-                perf, x="approved_rate_pct", y=officer_col, orientation="h",
-                title="Top 10 Loan Officer Approval Rate (this batch)",
-                labels={"approved_rate_pct": "Approval Rate (%)", officer_col: "Officer"},
-                hover_data=["n"]
+                grouped,
+                x="approved_loans",
+                y=officer_col,
+                orientation="h",
+                title="Top 10 Loan Officers by Approved Loans",
+                labels={"approved_loans": "Approved loans", officer_col: "Officer"},
+                hover_data=["total_reviewed"],
             )
+            fig.update_yaxes(autorange="reversed")
             fig.update_layout(margin=dict(l=10, r=10, t=50, b=10), height=420, template="plotly_dark")
             st.plotly_chart(fig, use_container_width=True)
 
@@ -516,6 +695,19 @@ def render_credit_dashboard(df: pd.DataFrame, currency_symbol: str = ""):
         share = (nb / total * 100) if total else 0.0
         with c4: _kpi_card("Non-bank Share", f"{share:.1f}%", f"{nb} of {total}")
 
+    if "estimated_roi" in df.columns and "decision" in cols:
+        roi_col, _ = st.columns([1, 3])
+        approved_mask = df["decision"].astype(str).str.lower() == "approved"
+        approved_roi = float(df.loc[approved_mask, "estimated_roi"].sum())
+        approved_count = int(approved_mask.sum())
+        avg_roi = float(df.loc[approved_mask, "estimated_roi"].mean()) if approved_count else 0.0
+        with roi_col:
+            _kpi_card(
+                "Estimated ROI (approved)",
+                f"{currency_symbol}{approved_roi:,.0f}" if currency_symbol else f"{approved_roi:,.0f}",
+                f"{approved_count} loans • avg {currency_symbol}{avg_roi:,.0f}" if approved_count else "No approved loans",
+            )
+
     # ─────────────── COMPOSITION & RISK ───────────────
     st.markdown("## 🧭 Composition & Risk")
 
@@ -541,7 +733,6 @@ def render_credit_dashboard(df: pd.DataFrame, currency_symbol: str = ""):
         st.plotly_chart(fig, use_container_width=True)
 
     # Loan term mix (stacked)
-    term_col = "loan_term_months" if "loan_term_months" in cols else ("loan_duration_months" if "loan_duration_months" in cols else None)
     if term_col and "decision" in cols:
         mix = df.groupby([term_col, "decision"]).size().reset_index(name="count")
         fig = px.bar(
@@ -568,19 +759,77 @@ def render_credit_dashboard(df: pd.DataFrame, currency_symbol: str = ""):
 
     # Top proposed plans (horizontal bar)
     if "proposed_loan_option" in cols:
-        plans = df["proposed_loan_option"].dropna().astype(str)
-        if len(plans) > 0:
-            plan_types = []
-            for s in plans:
-                p = _safe_json(s)
-                plan_types.append(p.get("type") if isinstance(p, dict) and "type" in p else s)
-            plan_df = pd.Series(plan_types).value_counts().head(10).rename_axis("plan").reset_index(name="count")
-            fig = px.bar(
-                plan_df, x="count", y="plan", orientation="h",
-                title="Top 10 Proposed Plans"
+        approved_mask = df["decision"].astype(str).str.lower() == "approved" if "decision" in cols else pd.Series(True, index=df.index)
+        plan_rows: List[Dict[str, Any]] = []
+        for _, row in df[approved_mask].dropna(subset=["proposed_loan_option"]).iterrows():
+            payload = try_json(row.get("proposed_loan_option"))
+            plan_type = None
+            plan_amount = _coerce_float(row.get("loan_amount"), 0.0)
+            plan_rate = None
+            plan_term = None
+            if isinstance(payload, dict):
+                plan_type = payload.get("type") or payload.get("name")
+                plan_amount = _coerce_float(payload.get("loan_amount"), plan_amount)
+                plan_rate = _coerce_float(payload.get("interest_rate"), _coerce_float(payload.get("rate"), float("nan")))
+                plan_term = _coerce_float(payload.get("term_months"), _coerce_float(payload.get("tenor_months"), float("nan")))
+            else:
+                plan_type = str(row.get("proposed_loan_option"))
+            plan_rows.append({
+                "plan_type": plan_type or "Unknown",
+                "application_id": row.get("application_id"),
+                "plan_amount": plan_amount,
+                "plan_rate": plan_rate,
+                "plan_term": plan_term,
+            })
+        if plan_rows:
+            plan_df = pd.DataFrame(plan_rows)
+            grouped = (
+                plan_df.groupby("plan_type", dropna=False)
+                .agg(
+                    approvals=("application_id", "count"),
+                    avg_amount=("plan_amount", "mean"),
+                    total_amount=("plan_amount", "sum"),
+                    avg_rate=("plan_rate", "mean"),
+                    avg_term=("plan_term", "mean"),
+                )
+                .reset_index()
             )
+            grouped = grouped.sort_values(["approvals", "total_amount"], ascending=[False, False]).head(10)
+            fig = px.bar(
+                grouped,
+                x="approvals",
+                y="plan_type",
+                orientation="h",
+                title="Top Approved Plan Types",
+                labels={"approvals": "Approvals", "plan_type": "Plan type"},
+                hover_data={
+                    "avg_amount": ":.0f",
+                    "avg_rate": ":.2f",
+                    "avg_term": ":.0f",
+                },
+            )
+            fig.update_yaxes(autorange="reversed")
             fig.update_layout(margin=dict(l=10, r=10, t=60, b=10), height=360, template="plotly_dark")
             st.plotly_chart(fig, use_container_width=True)
+            display_df = grouped.copy()
+            display_df["avg_amount"] = display_df["avg_amount"].fillna(0.0).round(0)
+            display_df["total_amount"] = display_df["total_amount"].fillna(0.0).round(0)
+            display_df["avg_rate"] = display_df["avg_rate"].fillna(0.0).round(2)
+            display_df["avg_term"] = display_df["avg_term"].fillna(0.0).round(0)
+            st.dataframe(
+                display_df.rename(
+                    columns={
+                        "plan_type": "Plan",
+                        "approvals": "Approvals",
+                        "avg_amount": fmt_currency_label("Avg amount"),
+                        "total_amount": fmt_currency_label("Total amount"),
+                        "avg_rate": "Avg rate (%)",
+                        "avg_term": "Avg term (months)",
+                    }
+                ),
+                use_container_width=True,
+                height=320,
+            )
 
     # Customer mix table (bank vs non-bank)
     if "customer_type" in cols:
@@ -634,6 +883,8 @@ def generate_raw_synthetic(n: int, non_bank_ratio: float) -> pd.DataFrame:
         "existing_debt": rng.integers(0, 50_000, n),
         "assets_owned": rng.integers(10_000, 300_000, n),
         "current_loans": rng.integers(0, 5, n),
+        "loan_history_unpaid": rng.poisson(0.4, n),
+        "loan_history_late_payments": rng.poisson(1.5, n),
         "customer_type": cust_type,
     })
     eps = 1e-9
@@ -668,6 +919,8 @@ def generate_anon_synthetic(n: int, non_bank_ratio: float) -> pd.DataFrame:
         "existing_debt": rng.integers(0, 50_000, n),
         "assets_owned": rng.integers(10_000, 300_000, n),
         "current_loans": rng.integers(0, 5, n),
+        "loan_history_unpaid": rng.poisson(0.4, n),
+        "loan_history_late_payments": rng.poisson(1.5, n),
         "customer_type": cust_type,
     })
     eps = 1e-9
@@ -866,6 +1119,18 @@ with tab_run:
     use_llm = st.checkbox("Use LLM narrative", value=False)
     agent_name = "credit_appraisal"
 
+    model_options = fetch_available_models(API_URL)
+    model_labels = ["Auto (use production/default)"] + [label for label, _ in model_options]
+    model_map = {label: name for label, name in model_options}
+    selected_model_label = st.selectbox(
+        "Credit risk model",
+        model_labels,
+        help="Pick a trained candidate or production model exposed by the training API.",
+    )
+    selected_model_name = model_map.get(selected_model_label)
+    if not model_options:
+        st.caption("No trained models discovered yet — falling back to the default model.")
+
     if data_choice == "Upload manually":
         up = st.file_uploader("Upload your CSV", type=["csv"], key="manual_upload_run_file")
         if up is not None:
@@ -980,6 +1245,8 @@ with tab_run:
                 "currency_code": st.session_state["currency_code"],
                 "currency_symbol": st.session_state["currency_symbol"],
             }
+            if selected_model_name:
+                data["selected_model_name"] = selected_model_name
             if rule_mode.startswith("Classic"):
                 rc = st.session_state.classic_rules
                 data.update({
@@ -1074,10 +1341,19 @@ with tab_run:
             # Decision filter IN TABLE (not hiding dashboard)
             st.markdown("### 📄 Credit Ai Agent  Decisions Table (filtered)")
             uniq_dec = sorted([d for d in merged_df.get("decision", pd.Series(dtype=str)).dropna().unique()])
-            chosen = st.multiselect("Filter decision", options=uniq_dec, default=uniq_dec, key="filter_decisions")
+            chosen = st.multiselect(
+                "Filter decision",
+                options=uniq_dec,
+                default=uniq_dec,
+                key="filter_decisions",
+                help="Toggle decisions to update the tables below. Clear the selection to show everything.",
+            )
             df_view = merged_df.copy()
-            if "decision" in df_view.columns and chosen:
-                df_view = df_view[df_view["decision"].isin(chosen)]
+            if "decision" in df_view.columns:
+                if chosen:
+                    df_view = df_view[df_view["decision"].isin(chosen)]
+                else:
+                    st.info("No decision selected — showing all rows.")
             st.dataframe(df_view, use_container_width=True)
 
             # ── DASHBOARD (always visible; filters apply in table below)
@@ -1091,7 +1367,7 @@ with tab_run:
                 df_view["metrics_unmet"] = rr.apply(lambda d: ", ".join(sorted([k for k, v in (d or {}).items() if v is False])) if isinstance(d, dict) else "")
             cols_show = [c for c in [
                 "application_id","customer_type","decision","score","loan_amount","income","metrics_met","metrics_unmet",
-                "proposed_loan_option","proposed_consolidation_loan","top_feature","explanation"
+                "estimated_roi","proposed_loan_option","proposed_consolidation_loan","top_feature","explanation"
             ] if c in df_view.columns]
             st.dataframe(df_view[cols_show].head(500), use_container_width=True)
 
@@ -1173,7 +1449,8 @@ with tab_review:
         st.markdown("#### 3) Export review CSV")
         model_used = "production"  # if you track specific model names, set it here
         ts = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
-        safe_user = st.session_state["user_info"]["name"].replace(" ", "").lower()
+        review_user = st.session_state.get("user_info", {}).get("name", "")
+        safe_user = review_user.replace(" ", "").lower()
         review_name = f"creditappraisal.{safe_user}.{model_used}.{ts}.csv"
         csv_bytes = edited.to_csv(index=False).encode("utf-8")
         st.download_button("⬇️ Export review CSV", csv_bytes, review_name, "text/csv")
@@ -1199,9 +1476,11 @@ with tab_train:
         st.write(staged_paths)
 
     st.markdown("#### Launch Retrain")
+    user_info = st.session_state.get("user_info", {})
+
     payload = {
         "feedback_csvs": staged_paths,
-        "user_name": st.session_state["user_info"]["name"],
+        "user_name": user_info.get("name", ""),
         "agent_name": "credit_appraisal",
         "algo_name": "credit_lr",
     }
