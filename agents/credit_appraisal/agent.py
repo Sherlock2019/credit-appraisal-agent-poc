@@ -11,6 +11,11 @@ import pandas as pd
 
 from .model_utils import ensure_model
 
+try:  # pragma: no cover - optional dependency during bootstrapping
+    from agents.asset_appraisal import AssetAppraisalAgent
+except Exception:  # pragma: no cover - fallback when asset agent is absent
+    AssetAppraisalAgent = None  # type: ignore
+
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Paths / Runs root
@@ -39,6 +44,36 @@ def _mk_run_dir(run_id: str) -> str:
     d = os.path.join(RUNS_ROOT, run_id)
     os.makedirs(d, exist_ok=True)
     return d
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Asset integration helpers
+# ──────────────────────────────────────────────────────────────────────────────
+
+def _load_asset_context() -> Dict[str, Any] | None:
+    if AssetAppraisalAgent is None:
+        return None
+    try:
+        agent = AssetAppraisalAgent()
+        return agent.get_latest_asset_record()
+    except Exception:
+        return None
+
+
+def _extract_loan_amount(row: pd.Series) -> float:
+    for key in (
+        "requested_amount",
+        "loan_amount",
+        "requested_loan_amount",
+        "loan_amt",
+        "amount_requested",
+    ):
+        value = row.get(key)
+        if value not in (None, ""):
+            parsed = _safe_float(value, 0.0)
+            if parsed and parsed > 0:
+                return float(parsed)
+    return 0.0
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -94,14 +129,25 @@ def _apply_rules_classic(
 
     # Pull fields with fallbacks
     dti = float(row.get("debt_to_income", row.get("DTI", 0.0)) or 0.0)
-    emp_years = int(row.get("employment_years", row.get("employment_length", 0)) or 0)
-    credit_hist = int(row.get("credit_history_length", 0) or 0)
-    income = float(row.get("income", 0.0) or 0.0)
-    delinq = int(row.get("num_delinquencies", 0) or 0)
-    current_loans = int(row.get("current_loans", 0) or 0)
-    requested = float(row.get("requested_amount", row.get("loan_amount", 0.0)) or 0.0)
-    term = int(row.get("loan_term_months", row.get("loan_duration_months", 0)) or 0)
-    existing_debt = float(row.get("existing_debt", 0.0) or 0.0)
+
+    emp_years_val = row.get("employment_years", row.get("employment_length"))
+    emp_years = int(_safe_float(emp_years_val, min_emp_years) or min_emp_years)
+
+    credit_hist_val = row.get("credit_history_length")
+    credit_hist = int(_safe_float(credit_hist_val, min_credit_hist) or min_credit_hist)
+
+    income = float(_safe_float(row.get("income"), salary_floor) or salary_floor)
+    delinq = int(_safe_float(row.get("num_delinquencies"), 0) or 0)
+    current_loans = int(_safe_float(row.get("current_loans"), 0) or 0)
+
+    requested_val = row.get("requested_amount", row.get("loan_amount"))
+    requested = float(_safe_float(requested_val, req_min) or req_min)
+
+    term_val = row.get("loan_term_months", row.get("loan_duration_months"))
+    default_term = allowed_terms[0] if allowed_terms else 0
+    term = int(_safe_float(term_val, default_term) or default_term)
+
+    existing_debt = float(_safe_float(row.get("existing_debt"), 0.0) or 0.0)
 
     # Debt pressure
     compounded_debt = existing_debt + compounded_debt_factor * requested
@@ -236,6 +282,82 @@ def _run_core(df_in: pd.DataFrame, **params) -> Dict[str, Any]:
         probs = (preds.astype(float) + 0.1) / 1.2
     probs = np.clip(probs, 0.0, 1.0)
     df["score"] = probs
+    df["base_score"] = df["score"]
+
+    # Asset context integration (collateral influence)
+    asset_context = _load_asset_context() or {}
+    asset_value = _safe_float(asset_context.get("estimated_value"), 0.0) or 0.0
+    asset_confidence = _safe_float(asset_context.get("confidence"), 0.0) or 0.0
+    asset_legitimacy = _safe_float(asset_context.get("legitimacy_score"), 0.0) or 0.0
+    asset_verified = bool(asset_context.get("verified", False))
+    asset_source = asset_context.get("source")
+    asset_id = asset_context.get("asset_id")
+    asset_type = asset_context.get("asset_type")
+    target_ltv = _as_float(params, "target_ltv", 0.8)
+
+    index_list = list(df.index)
+    adjustment_factors: List[float] = []
+    ltv_values: List[float | None] = []
+
+    if asset_value > 0:
+        for idx in index_list:
+            row = df.loc[idx]
+            base_score = _safe_float(row.get("base_score"), 0.0)
+            loan_amount = _extract_loan_amount(row)
+            if loan_amount > 0:
+                ltv = loan_amount / asset_value
+                ltv_values.append(round(ltv, 4))
+                if ltv <= target_ltv:
+                    coverage_factor = min(1.15, 1.0 + (target_ltv - ltv) * 0.1)
+                else:
+                    coverage_factor = max(0.8, 1.0 - (ltv - target_ltv) * 0.2)
+            else:
+                ltv = None
+                ltv_values.append(None)
+                coverage_factor = 1.0
+
+            if asset_legitimacy:
+                legitimacy_delta = max(-0.05, min(0.05, (asset_legitimacy - 0.9) * 0.1))
+                legitimacy_factor = 1.0 + legitimacy_delta
+            else:
+                legitimacy_factor = 1.0
+
+            if asset_confidence:
+                confidence_delta = max(-0.05, min(0.05, (asset_confidence - 0.85) * 0.1))
+                confidence_factor = 1.0 + confidence_delta
+            else:
+                confidence_factor = 1.0
+
+            verification_factor = 1.03 if asset_verified else 0.98
+            factor = coverage_factor * legitimacy_factor * confidence_factor * verification_factor
+            factor = max(0.75, min(factor, 1.2))
+            adjustment_factors.append(round(factor, 4))
+
+            adjusted_score = float(np.clip((base_score or 0.0) * factor, 0.0, 1.0))
+            df.at[idx, "score"] = adjusted_score
+    else:
+        ltv_values = [None for _ in index_list]
+        adjustment_factors = [1.0 for _ in index_list]
+
+    df["asset_ltv"] = ltv_values
+    df["asset_adjustment_factor"] = adjustment_factors
+
+    if asset_value > 0:
+        df["asset_value"] = asset_value
+        df["asset_confidence"] = asset_confidence
+        df["asset_legitimacy_score"] = asset_legitimacy or None
+        df["asset_verified"] = asset_verified
+        df["asset_source"] = asset_source
+        df["asset_id"] = asset_id
+        df["asset_type"] = asset_type
+    else:
+        df["asset_value"] = None
+        df["asset_confidence"] = None
+        df["asset_legitimacy_score"] = None
+        df["asset_verified"] = None
+        df["asset_source"] = None
+        df["asset_id"] = None
+        df["asset_type"] = None
 
     # — Threshold logic (target rate override supported)
     threshold = params.get("threshold")
@@ -263,7 +385,8 @@ def _run_core(df_in: pd.DataFrame, **params) -> Dict[str, Any]:
     proposals: List[Dict[str, Any]] = []
     top_feature = "score"
 
-    for _, row in df.iterrows():
+    for idx in index_list:
+        row = df.loc[idx]
         model_pass = _safe_float(row.get("score"), 0.0) >= float(threshold)
         row_reasons = {"model_threshold": model_pass}
 
@@ -295,8 +418,13 @@ def _run_core(df_in: pd.DataFrame, **params) -> Dict[str, Any]:
 
     # Summary
     counts = df["decision"].value_counts().to_dict()
+    counts.setdefault("approved", 0)
+    counts.setdefault("denied", 0)
+    total_count = int(sum(counts.values()))
+
     summary: Dict[str, Any] = {
         "counts": counts,
+        "count": total_count,
         "threshold": float(threshold),
         "rule_mode": rule_mode,
         "n_rows": int(len(df)),
@@ -304,6 +432,18 @@ def _run_core(df_in: pd.DataFrame, **params) -> Dict[str, Any]:
         "currency_symbol": params.get("currency_symbol"),
         "selected_model_name": selected_model_name,
     }
+    summary.update({k: int(v) for k, v in counts.items()})
+
+    if asset_value > 0:
+        summary["asset_context"] = {
+            "asset_id": asset_id,
+            "asset_type": asset_type,
+            "estimated_value": asset_value,
+            "confidence": asset_confidence,
+            "legitimacy_score": asset_legitimacy,
+            "verified": asset_verified,
+            "source": asset_source,
+        }
 
     # Run id + artifacts
     run_id = params.get("run_id") or f"run_{int(time.time())}"
@@ -333,10 +473,25 @@ def _run_core(df_in: pd.DataFrame, **params) -> Dict[str, Any]:
     with open(os.path.join(run_dir, "summary.json"), "w", encoding="utf-8") as f:
         json.dump(summary, f, ensure_ascii=False, indent=2)
 
+    explanation_columns = [
+        "application_id",
+        "decision",
+        "score",
+        "rule_reasons",
+        "proposed_loan_option",
+        "proposed_consolidation_loan",
+        "asset_value",
+        "asset_ltv",
+        "asset_adjustment_factor",
+    ]
+    available_cols = [col for col in explanation_columns if col in df.columns]
+    explanations = df[available_cols].to_dict(orient="records")
+
     # NOTE: return JSON-serializable only (no DataFrame) to avoid FastAPI serialization errors.
     return {
         "run_id": run_id,
         "summary": summary,
+        "explanations": explanations,
         "artifacts": {
             "merged_csv": f"{run_dir}/merged.csv",
             "scores_csv": f"{run_dir}/scores.csv",

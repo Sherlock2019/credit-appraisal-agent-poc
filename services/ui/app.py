@@ -885,6 +885,174 @@ with tab_clean:
 with tab_run:
     st.subheader("🤖 Credit appraisal by AI assistant")
 
+    if "asset_appraisal_result" not in st.session_state:
+        st.session_state["asset_appraisal_result"] = None
+    if "asset_verified_result" not in st.session_state:
+        st.session_state["asset_verified_result"] = None
+
+    st.markdown("### 🏠 Collateral Asset Workflow")
+    latest_asset_context = st.session_state.get("asset_verified_result") or st.session_state.get("asset_appraisal_result")
+    default_asset_id = (latest_asset_context or {}).get("asset_id", "")
+    if latest_asset_context:
+        try:
+            est_value = float(latest_asset_context.get("estimated_value", 0) or 0.0)
+            confidence_pct = float(latest_asset_context.get("confidence", 0) or 0.0) * 100.0
+        except Exception:
+            est_value = 0.0
+            confidence_pct = 0.0
+        st.info(
+            f"Latest asset valuation: **{latest_asset_context.get('asset_type', 'Asset')}** — "
+            f"ID `{default_asset_id}` — Estimated value ${est_value:,.0f} "
+            f"(confidence {confidence_pct:.1f}% ).",
+            icon="🏠",
+        )
+
+    with st.expander("🏠 Asset Appraisal Agent", expanded=False):
+        asset_type = st.selectbox(
+            "Asset Type",
+            ["Real Estate", "Vehicle", "Equipment", "Other"],
+            key="asset_type_selector",
+        )
+        declared_value = st.number_input(
+            "Declared Asset Value",
+            min_value=0.0,
+            step=1000.0,
+            help="Optional declared value from borrower.",
+        )
+        asset_notes = st.text_area(
+            "Asset Notes",
+            "",
+            help="Add contextual notes for the asset appraisal.",
+        )
+        uploaded_docs = st.file_uploader(
+            "Upload Documents / Photos",
+            accept_multiple_files=True,
+            key="asset_docs_uploader",
+        )
+        metadata: Dict[str, Any] = {"notes": asset_notes}
+        if declared_value:
+            metadata["declared_value"] = declared_value
+        if uploaded_docs:
+            metadata["files"] = [doc.name for doc in uploaded_docs]
+
+        if st.button("Run Asset Appraisal", key="asset_appraisal_run_btn"):
+            try:
+                payload = {
+                    "asset_type": asset_type,
+                    "metadata": json.dumps({k: v for k, v in metadata.items() if v not in (None, "", [])}),
+                }
+                resp = requests.post(
+                    f"{API_URL}/v1/agents/asset_appraisal/run",
+                    data=payload,
+                    timeout=30,
+                )
+                resp.raise_for_status()
+                result = resp.json().get("result")
+                st.session_state["asset_appraisal_result"] = result
+                st.session_state["asset_verified_result"] = None
+                st.success("Asset appraisal completed.")
+                st.json(result)
+                default_asset_id = result.get("asset_id", "") if result else ""
+                latest_asset_context = result
+            except Exception as exc:
+                st.error(f"Asset appraisal failed: {exc}")
+
+    with st.expander("🕵️ Bank Inspector Verification", expanded=False):
+        verify_asset_id = st.text_input(
+            "Asset ID",
+            value=default_asset_id,
+            key="asset_verify_id",
+        )
+        verified_flag = st.checkbox(
+            "Legitimacy Verified",
+            value=True,
+            key="asset_verify_flag",
+        )
+        legitimacy_score = st.slider(
+            "Legitimacy Score",
+            0.0,
+            1.0,
+            0.95,
+            0.01,
+        )
+        inspector_notes = st.text_area(
+            "Inspector Notes",
+            "Land title confirmed by local authority.",
+        )
+        local_ref = st.text_input("Local Authority Reference", "")
+
+        if st.button("Submit Verification", key="asset_submit_verification"):
+            try:
+                data = {
+                    "asset_id": verify_asset_id,
+                    "verified": str(verified_flag).lower(),
+                    "legitimacy_score": legitimacy_score,
+                    "inspector_notes": inspector_notes,
+                    "local_authority_ref": local_ref,
+                }
+                resp = requests.post(
+                    f"{API_URL}/v1/agents/asset_appraisal/verify",
+                    data=data,
+                    timeout=30,
+                )
+                resp.raise_for_status()
+                result = resp.json().get("result")
+                st.session_state["asset_verified_result"] = result
+                st.success("Verification recorded and asset valuation updated.")
+                st.json(result)
+                latest_asset_context = result
+                default_asset_id = result.get("asset_id", verify_asset_id) if result else verify_asset_id
+            except Exception as exc:
+                st.error(f"Failed to submit verification: {exc}")
+
+    with st.expander("📱 Field Data Upload", expanded=False):
+        field_asset_id = st.text_input(
+            "Asset ID",
+            value=default_asset_id,
+            key="field_asset_id",
+        )
+        inspector_name = st.text_input(
+            "Inspector Name",
+            value="",
+            key="field_inspector_name",
+        )
+        latitude = st.number_input("Latitude", value=0.0, format="%.6f")
+        longitude = st.number_input("Longitude", value=0.0, format="%.6f")
+        field_notes = st.text_area("Field Notes", "")
+        photo_upload = st.file_uploader(
+            "Photo Evidence",
+            type=["jpg", "jpeg", "png"],
+            key="field_photo",
+        )
+
+        if st.button("Upload Field Data", key="field_upload_btn"):
+            try:
+                data = {
+                    "asset_id": field_asset_id,
+                    "latitude": latitude,
+                    "longitude": longitude,
+                    "inspector_name": inspector_name,
+                    "notes": field_notes,
+                }
+                request_kwargs: Dict[str, Any] = {"data": data, "timeout": 30}
+                if photo_upload is not None:
+                    request_kwargs["files"] = {
+                        "photo": (
+                            photo_upload.name,
+                            photo_upload.getvalue(),
+                            photo_upload.type or "application/octet-stream",
+                        )
+                    }
+                resp = requests.post(
+                    f"{API_URL}/v1/agents/asset_appraisal/upload_field_data",
+                    **request_kwargs,
+                )
+                resp.raise_for_status()
+                st.success("Field data uploaded.")
+                st.json(resp.json())
+            except Exception as exc:
+                st.error(f"Failed to upload field data: {exc}")
+
     # Production model banner (optional)
     try:
         resp = requests.get(f"{API_URL}/v1/training/production_meta", timeout=5)
