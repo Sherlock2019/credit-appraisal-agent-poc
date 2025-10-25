@@ -1,24 +1,20 @@
 # services/ui/app.py
 # ─────────────────────────────────────────────
-# 🌐 OpenSource AI Agent Library + Credit Appraisal PoC
+# 🌐 OpenSource AI Agent Library + Credit Appraisal PoC by Dzoan
 # ─────────────────────────────────────────────
 from __future__ import annotations
-import os, re, io, json, time, datetime, random
-from typing import Any, Dict, List, Optional, Tuple
-import numpy as np, pandas as pd, streamlit as st
 import os
-import io
 import re
-import datetime
+import io
 import json
-from typing import Dict, Any, Optional, List, Tuple
+import random
+import datetime
+from typing import Optional, Dict, List, Any
 
 import pandas as pd
 import numpy as np
-import requests
 import streamlit as st
-
-# Plotly (pretty, dark)
+import requests
 import plotly.express as px
 import plotly.graph_objects as go
 
@@ -26,91 +22,152 @@ import plotly.graph_objects as go
 # CONFIG
 # ─────────────────────────────────────────────
 API_URL = os.getenv("API_URL", "http://localhost:8090")
-RUNS_DIR = os.path.expanduser("~/demo-library/services/api/.runs")
+RUNS_DIR = os.path.expanduser("~/credit-appraisal-agent-poc/services/api/.runs")
 TMP_FEEDBACK_DIR = os.path.join(RUNS_DIR, "tmp_feedback")
-LANDING_IMG_DIR = os.path.expanduser("~/demo-library/services/ui/landing_images")
+LANDING_IMG_DIR = os.path.expanduser("~/credit-appraisal-agent-poc/services/ui/landing_images")
+
 os.makedirs(RUNS_DIR, exist_ok=True)
 os.makedirs(TMP_FEEDBACK_DIR, exist_ok=True)
 os.makedirs(LANDING_IMG_DIR, exist_ok=True)
 
 st.set_page_config(page_title="OpenSource AI Agent Library", layout="wide")
+
 # ─────────────────────────────────────────────
 # HELPERS
 # ─────────────────────────────────────────────
-def load_image_for(agent_id: str, industry: str) -> Optional[str]:
-    """Prefer agent image, fallback to industry placeholder."""
-    for base in [agent_id, industry.replace(" ", "_")]:
-        for ext in [".png", ".jpg", ".jpeg", ".webp", ".gif", ".svg"]:
-            path = os.path.join(LANDING_IMG_DIR, f"{base}{ext}")
-            if os.path.exists(path):
-                return path
+def load_image(base: str) -> Optional[str]:
+    """Return full path of an existing image file with any common extension."""
+    for ext in [".png", ".jpg", ".jpeg", ".webp", ".gif", ".svg"]:
+        path = os.path.join(LANDING_IMG_DIR, f"{base}{ext}")
+        if os.path.exists(path):
+            return path
     return None
 
+
+def save_uploaded_image(uploaded_file, base: str) -> Optional[str]:
+    """Save uploaded Streamlit file to the landing image directory."""
+    if not uploaded_file:
+        return None
+    ext = os.path.splitext(uploaded_file.name)[1].lower() or ".png"
+    dest = os.path.join(LANDING_IMG_DIR, f"{base}{ext}")
+    with open(dest, "wb") as f:
+        f.write(uploaded_file.getvalue())
+    return dest
+
+
 def render_image_tag(agent_id: str, industry: str, emoji_fallback: str) -> str:
-    img_path = load_image_for(agent_id, industry)
+    """Return inline HTML <img> tag or emoji fallback."""
+    base = agent_id.lower().replace(" ", "_")
+    img_path = load_image(base) or load_image(industry.replace(" ", "_"))
     if img_path:
         return f'<img src="file://{img_path}" style="width:40px;height:40px;border-radius:8px;object-fit:cover;">'
     else:
         return f'<div style="font-size:28px;">{emoji_fallback}</div>'
 
+
 # ─────────────────────────────────────────────
-# DATA: SECTORS / INDUSTRIES / AGENTS
+# DATA
 # ─────────────────────────────────────────────
 AGENTS = [
     ("🏦 Banking & Finance", "💰 Retail Banking", "💳 Credit Appraisal Agent", "Explainable AI for loan decisioning", "Available", "💳"),
     ("🏦 Banking & Finance", "💰 Retail Banking", "🏦 Asset Appraisal Agent", "Market-driven collateral valuation", "Coming Soon", "🏦"),
     ("🏦 Banking & Finance", "🩺 Insurance", "🩺 Claims Triage Agent", "Automated claims prioritization", "Coming Soon", "🩺"),
-
     ("⚡ Energy & Sustainability", "🔋 EV & Charging", "⚡ EV Charger Optimizer", "Optimize charger deployment via AI", "Coming Soon", "⚡"),
     ("⚡ Energy & Sustainability", "☀️ Solar", "☀️ Solar Yield Estimator", "Estimate solar ROI and efficiency", "Coming Soon", "☀️"),
-
     ("🚗 Automobile & Transport", "🚙 Automobile", "🚗 Predictive Maintenance", "Prevent downtime via sensor analytics", "Coming Soon", "🚗"),
     ("🚗 Automobile & Transport", "🔋 EV", "🔋 EV Battery Health Agent", "Monitor EV battery health cycles", "Coming Soon", "🔋"),
     ("🚗 Automobile & Transport", "🚚 Ride-hailing / Logistics", "🛻 Fleet Route Optimizer", "Dynamic route optimization for fleets", "Coming Soon", "🛻"),
-
     ("💻 Information Technology", "🧰 Support & Security", "🧩 IT Ticket Triage", "Auto-prioritize support tickets", "Coming Soon", "🧩"),
     ("💻 Information Technology", "🛡️ Security", "🔐 SecOps Log Triage", "Detect anomalies & summarize alerts", "Coming Soon", "🔐"),
-
     ("⚖️ Legal & Government", "⚖️ Law Firms", "⚖️ Contract Analyzer", "Extract clauses and compliance risks", "Coming Soon", "⚖️"),
     ("⚖️ Legal & Government", "🏛️ Public Services", "🏛️ Citizen Service Agent", "Smart assistant for citizen services", "Coming Soon", "🏛️"),
-
     ("🛍️ Retail / SMB / Creative", "🏬 Retail & eCommerce", "📈 Sales Forecast Agent", "Predict demand & inventory trends", "Coming Soon", "📈"),
     ("🎬 Retail / SMB / Creative", "🎨 Media & Film", "🎬 Budget Cost Assistant", "Estimate, optimize, and track film & production costs using AI", "Coming Soon", "🎬"),
 ]
 
 # ─────────────────────────────────────────────
-# LANDING PAGE
+# STYLES
 # ─────────────────────────────────────────────
 st.markdown("""
 <style>
-table.dataframe tbody tr:hover {background-color:#f1f5f9;}
+.block-container {padding: 0rem; max-width: 100%;}
+.banner {
+    width: 100%;
+    height: 320px;
+    border-radius: 12px;
+    overflow: hidden;
+    margin-bottom: 1.5rem;
+    box-shadow: 0 4px 10px rgba(0,0,0,0.15);
+}
+.banner img {
+    width: 100%;
+    height: 320px;
+    object-fit: cover;
+    border-radius: 12px;
+}
 .status-Available {color: #16a34a; font-weight:600;}
 .status-ComingSoon {color: #f59e0b; font-weight:600;}
+
+/* Workflow pipeline styling — match header size */
+.stTabs [data-baseweb="tab"] {
+    font-size: 32px !important;
+    font-weight: 800 !important;
+    padding: 28px 42px !important;
+    margin-right: 16px !important;
+    border-radius: 14px !important;
+    background-color: #f8fafc !important;
+    color: #111 !important;
+    line-height: 1.2 !important;
+}
+.stTabs [data-baseweb="tab"][aria-selected="true"] {
+    border-bottom: 8px solid #2563eb !important;
+    color: #2563eb !important;
+    background: linear-gradient(90deg,#dbeafe,#eff6ff) !important;
+}
+.stTabs [data-baseweb="tab"]:hover {
+    background-color: #e0e7ff !important;
+    transform: translateY(-2px);
+    transition: all 0.25s ease-in-out;
+}
 </style>
 """, unsafe_allow_html=True)
 
-st.title("🌐 OpenSource AI Agent Library")
-st.caption("Explore sectors, industries, and ready-to-use AI agents — including the **Credit Appraisal Agent** demo below.")
+# ─────────────────────────────────────────────
+# HERO BANNER
+# ─────────────────────────────────────────────
+banner_key = "agent_library_banner"
+banner_path = load_image(banner_key)
 
-# Upload area
-st.markdown("### 🖼️ Upload or Replace Industry / Agent Image")
-uploaded = st.file_uploader("Upload image (.jpg, .png, .webp, .gif, .svg)", type=["jpg","png","webp","gif","svg"])
-if uploaded:
-    fname = st.text_input("Save image as (agent or industry name, no spaces):", "")
-    if fname:
-        ext = os.path.splitext(uploaded.name)[1]
-        path = os.path.join(LANDING_IMG_DIR, f"{fname}{ext or '.png'}")
-        with open(path, "wb") as f:
-            f.write(uploaded.getvalue())
-        st.success(f"✅ Saved to {path}")
+st.markdown("<div class='banner'>", unsafe_allow_html=True)
+if banner_path and os.path.exists(banner_path):
+    st.image(banner_path, use_container_width=True)
+else:
+    st.markdown(
+        "<div style='height:320px;background:#e5e7eb;display:flex;"
+        "align-items:center;justify-content:center;color:#6b7280;"
+        "font-size:18px;border-radius:12px;'>🖼️ Upload your AI Agent Library banner</div>",
+        unsafe_allow_html=True)
+st.markdown("</div>", unsafe_allow_html=True)
 
-# Table
+banner_upload = st.file_uploader("Upload new top banner (JPG/PNG/WebP)", type=["jpg", "png", "webp"], key="upload_banner")
+if banner_upload:
+    new_path = save_uploaded_image(banner_upload, banner_key)
+    if new_path:
+        st.success(f"✅ New top banner saved to {new_path}")
+        st.rerun()
+
+# ─────────────────────────────────────────────
+# TABLE — AI AGENT LIBRARY
+# ─────────────────────────────────────────────
+st.title("📊 Global AI Agent Library")
+st.caption("Explore sectors, industries, and ready-to-use AI agents across domains.")
+
 rows = []
 for sector, industry, agent, desc, status, emoji in AGENTS:
     rating = round(random.uniform(3.5, 5.0), 1)
     users = random.randint(800, 9000)
     comments = random.randint(5, 120)
-    image_html = render_image_tag(agent.lower().replace(" ", "_"), industry, emoji)
+    image_html = render_image_tag(agent, industry, emoji)
     rows.append({
         "🖼️": image_html,
         "🏭 Sector": sector,
@@ -124,17 +181,18 @@ for sector, industry, agent, desc, status, emoji in AGENTS:
     })
 
 df = pd.DataFrame(rows)
-st.markdown("### 📊 Global View of All AI Agents")
 st.write(df.to_html(escape=False, index=False), unsafe_allow_html=True)
 
-# Try Now button
+# ─────────────────────────────────────────────
+# TRY NOW + WORKFLOW PIPELINE
+# ─────────────────────────────────────────────
 st.markdown("---")
 st.markdown("""
 <div style="text-align:center;">
     <a href="#credit_poc" style="text-decoration:none;">
         <button style="background:linear-gradient(90deg,#2563eb,#1d4ed8);
                        border:none;border-radius:12px;color:white;
-                       padding:12px 24px;font-size:16px;cursor:pointer;">
+                       padding:16px 34px;font-size:20px;cursor:pointer;">
             🚀 Try Credit Appraisal Agent Now
         </button>
     </a>
@@ -143,6 +201,19 @@ st.markdown("""
 
 st.markdown('<h2 id="credit_poc">💳 Credit Appraisal Agent PoC</h2>', unsafe_allow_html=True)
 st.write("Below is your interactive Credit Appraisal Agent demo:")
+
+# ─────────────────────────────────────────────
+# WORKFLOW PIPELINE — WITH LOOPBACK
+# ─────────────────────────────────────────────
+tabs = st.tabs([
+    "🧩 Step 1 / Synthetic Data Generator",
+    "🧹 Step 2 / Anonymize & Sanitize Data",
+    "🤖 Step 3 / Credit Appraisal by AI Assistant",
+    "🧑‍⚖️ Step 4 / Human Review",
+    "🔁 Step 5 / Training (Feedback → Retrain)",
+    "🔄 Step 6 / Loop Back to Step 3 → Use New Trained Model",
+])
+
 
 
 # ─────────────────────────────────────────────
@@ -1110,6 +1181,7 @@ with tab_run:
         with col4: st.markdown(f"[⬇️ Merged CSV]({API_URL}/v1/runs/{rid}/report?format=csv)")
         with col5: st.markdown(f"[⬇️ JSON]({API_URL}/v1/runs/{rid}/report?format=json)")
 
+
 # ─────────────────────────────────────────────
 # 🧑‍⚖️ TAB 4 — Human Review
 with tab_review:
@@ -1170,6 +1242,7 @@ with tab_review:
         csv_bytes = edited.to_csv(index=False).encode("utf-8")
         st.download_button("⬇️ Export review CSV", csv_bytes, review_name, "text/csv")
         st.caption(f"Saved file name pattern: **{review_name}**")
+
 
 # ─────────────────────────────────────────────
 # 🔁 TAB 5 — Training (Feedback → Retrain)
