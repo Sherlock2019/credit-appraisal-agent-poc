@@ -184,10 +184,6 @@ AGENTS = [
     ("🎬 Retail / SMB / Creative", "🎨 Media & Film", "🎬 Budget Cost Assistant", "Estimate, optimize, and track film & production costs using AI", "Coming Soon", "🎬"),
 ]
 
-AGENT_API_OVERRIDES: Dict[str, str] = {
-    "💳 Credit Appraisal Agent": "credit_appraisal",
-}
-
 # ─────────────────────────────────────────────
 # LANDING PAGE
 # ─────────────────────────────────────────────
@@ -201,10 +197,6 @@ table.dataframe tbody tr:hover {background-color:#f1f5f9;}
 
 st.title("🌐 OpenSource AI Agent Library")
 st.caption("Explore sectors, industries, and ready-to-use AI agents — including the **Credit Appraisal Agent** demo below.")
-
-landing_hero_path = _first_existing_image(LANDING_HERO_BASENAME)
-if landing_hero_path:
-    display_image_preview(landing_hero_path, "Current landing banner", max_height=260)
 
 # Upload area
 st.markdown("### 🖼️ Landing Imagery Manager")
@@ -915,11 +907,30 @@ def render_credit_dashboard(df: pd.DataFrame, currency_symbol: str = ""):
         st.dataframe(mix, use_container_width=True, height=220)
 
 # ─────────────────────────────────────────────
-# PANEL RENDERERS
+# TABS
+tab_gen, tab_clean, tab_run, tab_review, tab_train = st.tabs([
+    "🏦 Synthetic Data Generator",
+    "🧹 Anonymize & Sanitize Data",
+    "🤖 Credit appraisal by AI assistant",
+    "🧑‍⚖️ Human Review",
+    "🔁 Training (Feedback → Retrain)"
+])
 
+# ─────────────────────────────────────────────
+# DATA GENERATORS
 
-def render_panel_navigation(current_key: str, panel_order: List[Tuple[str, str]]) -> None:
-    """Render Back/Next controls for the wizard panels."""
+def generate_raw_synthetic(n: int, non_bank_ratio: float) -> pd.DataFrame:
+    rng = np.random.default_rng(42)
+    names = ["Alice Nguyen","Bao Tran","Chris Do","Duy Le","Emma Tran",
+             "Felix Nguyen","Giang Ho","Hanh Vo","Ivan Pham","Julia Ngo"]
+    emails = [f"{n.split()[0].lower()}.{n.split()[1].lower()}@gmail.com" for n in names]
+    addrs = [
+        "23 Elm St, Boston, MA","19 Pine Ave, San Jose, CA","14 High St, London, UK",
+        "55 Nguyen Hue, Ho Chi Minh","78 Oak St, Chicago, IL","10 Broadway, New York, NY",
+        "8 Rue Lafayette, Paris, FR","21 Königstr, Berlin, DE","44 Maple Dr, Los Angeles, CA","22 Bay St, Toronto, CA"
+    ]
+    is_non = rng.random(n) < non_bank_ratio
+    cust_type = np.where(is_non, "non-bank", "bank")
 
     df = pd.DataFrame({
         "application_id": [f"APP_{i:04d}" for i in range(1, n + 1)],
@@ -987,22 +998,43 @@ def generate_anon_synthetic(n: int, non_bank_ratio: float) -> pd.DataFrame:
     df["ITI"] = (df["loan_amount"] / (df["loan_duration_months"] + eps)) / (df["income"] + eps)
     df["CWI"] = ((1 - df["DTI"]).clip(0, 1)) * ((1 - df["LTV"]).clip(0, 1)) * (df["CCR"].clip(0, 3))
 
-    cols = st.columns([1, 1])
-    if prev_key:
-        if cols[0].button("⬅️ Back", key=f"back_{current_key}", use_container_width=True):
-            _set_active(prev_key)
-            st.experimental_rerun()
-    else:
-        cols[0].markdown("&nbsp;")
-    if next_key:
-        if cols[1].button("Next ➡️", key=f"next_{current_key}", use_container_width=True):
-            _set_active(next_key)
-            st.experimental_rerun()
-    else:
-        cols[1].markdown("&nbsp;")
+    fx = st.session_state["currency_fx"]
+    for c in ("income", "loan_amount", "collateral_value", "assets_owned", "existing_debt"):
+        df[c] = (df[c] * fx).round(2)
+    df["currency_code"] = st.session_state["currency_code"]
+    return dedupe_columns(df)
 
+def to_agent_schema(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Harmonize to the server-side agent’s expected schema.
+    """
+    out = df.copy()
+    n = len(out)
+    if "employment_years" not in out.columns:
+        out["employment_years"] = out.get("employment_length", 0)
+    if "debt_to_income" not in out.columns:
+        if "DTI" in out.columns:
+            out["debt_to_income"] = out["DTI"].astype(float)
+        elif "existing_debt" in out.columns and "income" in out.columns:
+            denom = out["income"].replace(0, np.nan)
+            dti = (out["existing_debt"] / denom).fillna(0.0)
+            out["debt_to_income"] = dti.clip(0, 10)
+        else:
+            out["debt_to_income"] = 0.0
+    rng = np.random.default_rng(12345)
+    if "credit_history_length" not in out.columns:
+        out["credit_history_length"] = rng.integers(0, 30, n)
+    if "num_delinquencies" not in out.columns:
+        out["num_delinquencies"] = np.minimum(rng.poisson(0.2, n), 10)
+    if "requested_amount" not in out.columns:
+        out["requested_amount"] = out.get("loan_amount", 0)
+    if "loan_term_months" not in out.columns:
+        out["loan_term_months"] = out.get("loan_duration_months", 0)
+    return dedupe_columns(out)
 
-def render_tab_gen():
+# ─────────────────────────────────────────────
+# 🏦 TAB 1 — Synthetic Data Generator
+with tab_gen:
     st.subheader("🏦 Synthetic Credit Data Generator")
 
     # Currency selector (before generation)
@@ -1012,7 +1044,7 @@ def render_tab_gen():
             "Currency",
             list(CURRENCY_OPTIONS.keys()),
             index=list(CURRENCY_OPTIONS.keys()).index(st.session_state["currency_code"]),
-            help="All monetary fields will be generated in this local currency."
+            help="All monetary fields will be in this local currency."
         )
         if code != st.session_state["currency_code"]:
             st.session_state["currency_code"] = code
@@ -1052,12 +1084,13 @@ def render_tab_gen():
                 "text/csv"
             )
 
-
-def render_tab_clean():
+# ─────────────────────────────────────────────
+# 🧹 TAB 2 — Anonymize & Sanitize Data
+with tab_clean:
     st.subheader("🧹 Upload & Anonymize Customer Data (PII columns will be DROPPED)")
     st.markdown("Upload your **real CSV**. We drop PII columns and scrub emails/phones in text fields.")
 
-    uploaded = st.file_uploader("Upload CSV file", type=["csv"], key="clean_tab_uploader")
+    uploaded = st.file_uploader("Upload CSV file", type=["csv"])
     if uploaded:
         try:
             df = pd.read_csv(uploaded)
@@ -1088,8 +1121,9 @@ def render_tab_clean():
     else:
         st.info("Choose a CSV to see the sanitize flow.", icon="ℹ️")
 
-
-def render_tab_run():
+# ─────────────────────────────────────────────
+# 🤖 TAB 3 — Credit appraisal by AI assistant
+with tab_run:
     st.subheader("🤖 Credit appraisal by AI assistant")
 
     # Production model banner (optional)
@@ -1151,49 +1185,7 @@ def render_tab_run():
         ]
     )
     use_llm = st.checkbox("Use LLM narrative", value=False)
-
-    st.markdown("### 🤖 Choose agent to test")
-    available_agents = [
-        (agent, industry)
-        for _, industry, agent, _, status, _ in AGENTS
-        if str(status).lower() == "available"
-    ]
     agent_name = "credit_appraisal"
-    selected_agent_label: Optional[str] = None
-    selected_agent_industry = ""
-    if available_agents:
-        agent_labels = [agent for agent, _ in available_agents]
-        selected_agent_label = st.selectbox(
-            "Agent",
-            agent_labels,
-            index=0,
-            key="agent_runner_select",
-            help="Pick which available agent to exercise.",
-        )
-        selected_agent_industry = next(
-            industry for agent, industry in available_agents if agent == selected_agent_label
-        )
-        agent_key = sanitize_image_key(selected_agent_label)
-        agent_preview_path = load_image_for(agent_key, selected_agent_industry)
-        if agent_preview_path:
-            display_image_preview(agent_preview_path, f"Selected agent: {selected_agent_label}", max_height=200)
-        else:
-            st.info("Upload an image for this agent or its industry to personalise the preview above.")
-        agent_name = AGENT_API_OVERRIDES.get(selected_agent_label, agent_key)
-    else:
-        st.warning("No available agents listed — defaulting to the credit appraisal agent.")
-
-    model_options = fetch_available_models(API_URL)
-    model_labels = ["Auto (use production/default)"] + [label for label, _ in model_options]
-    model_map = {label: name for label, name in model_options}
-    selected_model_label = st.selectbox(
-        "Credit risk model",
-        model_labels,
-        help="Pick a production model exposed by the training API.",
-    )
-    selected_model_name = model_map.get(selected_model_label)
-    if not model_options:
-        st.caption("No production models discovered yet — falling back to the default model.")
 
     model_options = fetch_available_models(API_URL)
     model_labels = ["Auto (use production/default)"] + [label for label, _ in model_options]
@@ -1367,17 +1359,17 @@ def render_tab_run():
 
             if data_choice == "Use synthetic (ANON)":
                 if "synthetic_df" not in st.session_state:
-                    st.warning("No ANON synthetic dataset found. Generate it in the first panel."); st.stop()
+                    st.warning("No ANON synthetic dataset found. Generate it in the first tab."); st.stop()
                 files = prep_and_pack(st.session_state.synthetic_df, "synthetic_anon.csv")
 
             elif data_choice == "Use synthetic (RAW – auto-sanitize)":
                 if "synthetic_raw_df" not in st.session_state:
-                    st.warning("No RAW synthetic dataset found. Generate it in the first panel."); st.stop()
+                    st.warning("No RAW synthetic dataset found. Generate it in the first tab."); st.stop()
                 files = prep_and_pack(st.session_state.synthetic_raw_df, "synthetic_raw_sanitized.csv")
 
             elif data_choice == "Use anonymized dataset":
                 if "anonymized_df" not in st.session_state:
-                    st.warning("No anonymized dataset found. Create it in the second panel."); st.stop()
+                    st.warning("No anonymized dataset found. Create it in the second tab."); st.stop()
                 files = prep_and_pack(st.session_state.anonymized_df, "anonymized.csv")
 
             elif data_choice == "Upload manually":
@@ -1399,6 +1391,7 @@ def render_tab_run():
 
             res = r.json()
             st.session_state.last_run_id = res.get("run_id")
+            result = res.get("result", {}) or {}
             st.success(f"✅ Run succeeded! Run ID: {st.session_state.last_run_id}")
 
             # Pull merged.csv for dashboards/review
@@ -1408,8 +1401,13 @@ def render_tab_run():
             merged_df = pd.read_csv(io.BytesIO(merged_bytes))
             st.session_state["last_merged_df"] = merged_df
 
+            # Export AI outputs as csv with currency code (for Human Review dropdown)
+            ts = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+            out_name = f"ai-appraisal-outputs-{ts}-{st.session_state['currency_code']}.csv"
+            st.download_button("⬇️ Download AI outputs (CSV)", merged_df.to_csv(index=False).encode("utf-8"), out_name, "text/csv")
+
             # Decision filter IN TABLE (not hiding dashboard)
-            st.markdown("### 📄 Credit AI Agent Decisions Table (filtered)")
+            st.markdown("### 📄 Credit Ai Agent  Decisions Table (filtered)")
             uniq_dec = sorted([d for d in merged_df.get("decision", pd.Series(dtype=str)).dropna().unique()])
             chosen = st.multiselect(
                 "Filter decision",
@@ -1431,11 +1429,10 @@ def render_tab_run():
             render_credit_dashboard(merged_df, st.session_state.get("currency_symbol", ""))
 
             # Per-row metrics met/not met
-            detail_df = filtered_df.copy()
-            if "rule_reasons" in detail_df.columns:
-                rr = detail_df["rule_reasons"].apply(try_json)
-                detail_df["metrics_met"] = rr.apply(lambda d: ", ".join(sorted([k for k, v in (d or {}).items() if v is True])) if isinstance(d, dict) else "")
-                detail_df["metrics_unmet"] = rr.apply(lambda d: ", ".join(sorted([k for k, v in (d or {}).items() if v is False])) if isinstance(d, dict) else "")
+            if "rule_reasons" in df_view.columns:
+                rr = df_view["rule_reasons"].apply(try_json)
+                df_view["metrics_met"] = rr.apply(lambda d: ", ".join(sorted([k for k, v in (d or {}).items() if v is True])) if isinstance(d, dict) else "")
+                df_view["metrics_unmet"] = rr.apply(lambda d: ", ".join(sorted([k for k, v in (d or {}).items() if v is False])) if isinstance(d, dict) else "")
             cols_show = [c for c in [
                 "application_id","customer_type","decision","score","loan_amount","income","metrics_met","metrics_unmet",
                 "estimated_roi","proposed_loan_option","proposed_consolidation_loan","top_feature","explanation"
@@ -1453,15 +1450,21 @@ def render_tab_run():
         except Exception as e:
             st.exception(e)
 
-    # Re-download quick section replaced with reminder if run exists
+    # Re-download quick section
     if st.session_state.get("last_run_id"):
+        st.markdown("---")
+        st.subheader("📥 Download Latest Outputs")
         rid = st.session_state.last_run_id
-        st.caption(
-            f"Need other formats? Visit the reports endpoint directly: {API_URL}/v1/runs/{rid}/report?format=<type>"
-        )
+        col1, col2, col3, col4, col5 = st.columns(5)
+        with col1: st.markdown(f"[⬇️ PDF]({API_URL}/v1/runs/{rid}/report?format=pdf)")
+        with col2: st.markdown(f"[⬇️ Scores CSV]({API_URL}/v1/runs/{rid}/report?format=scores_csv)")
+        with col3: st.markdown(f"[⬇️ Explanations CSV]({API_URL}/v1/runs/{rid}/report?format=explanations_csv)")
+        with col4: st.markdown(f"[⬇️ Merged CSV]({API_URL}/v1/runs/{rid}/report?format=csv)")
+        with col5: st.markdown(f"[⬇️ JSON]({API_URL}/v1/runs/{rid}/report?format=json)")
 
-
-def render_tab_review():
+# ─────────────────────────────────────────────
+# 🧑‍⚖️ TAB 4 — Human Review
+with tab_review:
     st.subheader("🧑‍⚖️ Human Review — Correct AI Decisions & Score Agreement")
 
     # Allow loading AI output CSV back into review via dropdown upload
@@ -1474,7 +1477,7 @@ def render_tab_review():
             st.error(f"Could not read uploaded CSV: {e}")
 
     if "last_merged_df" not in st.session_state:
-        st.info("Run the agent (previous panel) or upload an AI outputs CSV to load results for review.")
+        st.info("Run the agent (previous tab) or upload an AI outputs CSV to load results for review.")
     else:
         dfm = st.session_state["last_merged_df"].copy()
         st.markdown("#### 1) Select rows to review and correct")
@@ -1521,11 +1524,12 @@ def render_tab_review():
         st.download_button("⬇️ Export review CSV", csv_bytes, review_name, "text/csv")
         st.caption(f"Saved file name pattern: **{review_name}**")
 
-
-def render_tab_train():
+# ─────────────────────────────────────────────
+# 🔁 TAB 5 — Training (Feedback → Retrain)
+with tab_train:
     st.subheader("🔁 Human Feedback → Retrain (new payload)")
 
-    st.markdown("**Drag & drop** one or more review CSVs exported from the Human Review panel.")
+    st.markdown("**Drag & drop** one or more review CSVs exported from the Human Review tab.")
     up_list = st.file_uploader("Upload feedback CSV(s)", type=["csv"], accept_multiple_files=True, key="train_feedback_uploader")
 
     staged_paths: List[str] = []
@@ -1580,187 +1584,3 @@ def render_tab_train():
             st.info("No production model yet.")
     except Exception as e:
         st.warning(f"Could not load production meta: {e}")
-
-# ─────────────────────────────────────────────
-# PANEL NAVIGATION
-
-PANEL_ORDER: List[Tuple[str, str]] = [
-    ("gen", "🏦 Synthetic Data Generator"),
-    ("clean", "🧹 Anonymize & Sanitize Data"),
-    ("run", "🤖 Credit appraisal by AI assistant"),
-    ("review", "🧑‍⚖️ Human Review"),
-    ("train", "🔁 Training (Feedback → Retrain)"),
-]
-
-PANEL_RENDERERS = {
-    "gen": render_tab_gen,
-    "clean": render_tab_clean,
-    "run": render_tab_run,
-    "review": render_tab_review,
-    "train": render_tab_train,
-}
-
-if "active_panel" not in st.session_state:
-    st.session_state["active_panel"] = PANEL_ORDER[0][0]
-
-label_map = {key: label for key, label in PANEL_ORDER}
-if "main_panel_selector" not in st.session_state:
-    st.session_state["main_panel_selector"] = label_map[st.session_state["active_panel"]]
-
-st.markdown(
-    """
-    <style>
-    div[data-baseweb=\"radio\"] > div {
-        flex-wrap: wrap;
-        gap: 0.75rem;
-        justify-content: center;
-    }
-    div[data-baseweb=\"radio\"] label {
-        background: rgba(37,99,235,0.1);
-        border: 1px solid rgba(37,99,235,0.3);
-        border-radius: 999px;
-        padding: 0.6rem 1.4rem;
-        font-size: 1.05rem;
-        font-weight: 600;
-        color: #1e3a8a;
-    }
-    div[data-baseweb=\"radio\"] label[data-selected=\"true\"] {
-        background: linear-gradient(90deg,#2563eb,#1d4ed8);
-        color: white;
-        box-shadow: 0 4px 14px rgba(37,99,235,0.35);
-    }
-    </style>
-    """,
-    unsafe_allow_html=True,
-)
-
-panel_labels = [label for _, label in PANEL_ORDER]
-selected_label = st.radio(
-    "Main panels",
-    panel_labels,
-    index=panel_labels.index(st.session_state["main_panel_selector"]),
-    key="main_panel_selector",
-    horizontal=True,
-)
-
-selected_key = next(key for key, label in PANEL_ORDER if label == selected_label)
-st.session_state["active_panel"] = selected_key
-
-PANEL_RENDERERS[selected_key]()
-render_panel_navigation(selected_key, PANEL_ORDER)
-
-# ─────────────────────────────────────────────
-# DATA GENERATORS
-
-def generate_raw_synthetic(n: int, non_bank_ratio: float) -> pd.DataFrame:
-    rng = np.random.default_rng(42)
-    names = ["Alice Nguyen","Bao Tran","Chris Do","Duy Le","Emma Tran",
-             "Felix Nguyen","Giang Ho","Hanh Vo","Ivan Pham","Julia Ngo"]
-    emails = [f"{n.split()[0].lower()}.{n.split()[1].lower()}@gmail.com" for n in names]
-    addrs = [
-        "23 Elm St, Boston, MA","19 Pine Ave, San Jose, CA","14 High St, London, UK",
-        "55 Nguyen Hue, Ho Chi Minh","78 Oak St, Chicago, IL","10 Broadway, New York, NY",
-        "8 Rue Lafayette, Paris, FR","21 Königstr, Berlin, DE","44 Maple Dr, Los Angeles, CA","22 Bay St, Toronto, CA"
-    ]
-    is_non = rng.random(n) < non_bank_ratio
-    cust_type = np.where(is_non, "non-bank", "bank")
-
-    df = pd.DataFrame({
-        "application_id": [f"APP_{i:04d}" for i in range(1, n + 1)],
-        "customer_name": np.random.choice(names, n),
-        "email": np.random.choice(emails, n),
-        "phone": [f"+1-202-555-{1000+i:04d}" for i in range(n)],
-        "address": np.random.choice(addrs, n),
-        "national_id": rng.integers(10_000_000, 99_999_999, n),
-        "age": rng.integers(21, 65, n),
-        "income": rng.integers(25_000, 150_000, n),
-        "employment_length": rng.integers(0, 30, n),
-        "loan_amount": rng.integers(5_000, 100_000, n),
-        "loan_duration_months": rng.choice([12, 24, 36, 48, 60, 72], n),
-        "collateral_value": rng.integers(8_000, 200_000, n),
-        "collateral_type": rng.choice(["real_estate","car","land","deposit"], n),
-        "co_loaners": rng.choice([0,1,2], n, p=[0.7, 0.25, 0.05]),
-        "credit_score": rng.integers(300, 850, n),
-        "existing_debt": rng.integers(0, 50_000, n),
-        "assets_owned": rng.integers(10_000, 300_000, n),
-        "current_loans": rng.integers(0, 5, n),
-        "loan_history_unpaid": rng.poisson(0.4, n),
-        "loan_history_late_payments": rng.poisson(1.5, n),
-        "customer_type": cust_type,
-    })
-    eps = 1e-9
-    df["DTI"] = df["existing_debt"] / (df["income"] + eps)
-    df["LTV"] = df["loan_amount"] / (df["collateral_value"] + eps)
-    df["CCR"] = df["collateral_value"] / (df["loan_amount"] + eps)
-    df["ITI"] = (df["loan_amount"] / (df["loan_duration_months"] + eps)) / (df["income"] + eps)
-    df["CWI"] = ((1 - df["DTI"]).clip(0, 1)) * ((1 - df["LTV"]).clip(0, 1)) * (df["CCR"].clip(0, 3))
-
-    fx = st.session_state["currency_fx"]
-    for c in ("income", "loan_amount", "collateral_value", "assets_owned", "existing_debt"):
-        df[c] = (df[c] * fx).round(2)
-    df["currency_code"] = st.session_state["currency_code"]
-    return dedupe_columns(df)
-
-def generate_anon_synthetic(n: int, non_bank_ratio: float) -> pd.DataFrame:
-    rng = np.random.default_rng(42)
-    is_non = rng.random(n) < non_bank_ratio
-    cust_type = np.where(is_non, "non-bank", "bank")
-
-    df = pd.DataFrame({
-        "application_id": [f"APP_{i:04d}" for i in range(1, n + 1)],
-        "age": rng.integers(21, 65, n),
-        "income": rng.integers(25_000, 150_000, n),
-        "employment_length": rng.integers(0, 30, n),
-        "loan_amount": rng.integers(5_000, 100_000, n),
-        "loan_duration_months": rng.choice([12, 24, 36, 48, 60, 72], n),
-        "collateral_value": rng.integers(8_000, 200_000, n),
-        "collateral_type": rng.choice(["real_estate","car","land","deposit"], n),
-        "co_loaners": rng.choice([0,1,2], n, p=[0.7, 0.25, 0.05]),
-        "credit_score": rng.integers(300, 850, n),
-        "existing_debt": rng.integers(0, 50_000, n),
-        "assets_owned": rng.integers(10_000, 300_000, n),
-        "current_loans": rng.integers(0, 5, n),
-        "loan_history_unpaid": rng.poisson(0.4, n),
-        "loan_history_late_payments": rng.poisson(1.5, n),
-        "customer_type": cust_type,
-    })
-    eps = 1e-9
-    df["DTI"] = df["existing_debt"] / (df["income"] + eps)
-    df["LTV"] = df["loan_amount"] / (df["collateral_value"] + eps)
-    df["CCR"] = df["collateral_value"] / (df["loan_amount"] + eps)
-    df["ITI"] = (df["loan_amount"] / (df["loan_duration_months"] + eps)) / (df["income"] + eps)
-    df["CWI"] = ((1 - df["DTI"]).clip(0, 1)) * ((1 - df["LTV"]).clip(0, 1)) * (df["CCR"].clip(0, 3))
-
-    fx = st.session_state["currency_fx"]
-    for c in ("income", "loan_amount", "collateral_value", "assets_owned", "existing_debt"):
-        df[c] = (df[c] * fx).round(2)
-    df["currency_code"] = st.session_state["currency_code"]
-    return dedupe_columns(df)
-
-def to_agent_schema(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Harmonize to the server-side agent’s expected schema.
-    """
-    out = df.copy()
-    n = len(out)
-    if "employment_years" not in out.columns:
-        out["employment_years"] = out.get("employment_length", 0)
-    if "debt_to_income" not in out.columns:
-        if "DTI" in out.columns:
-            out["debt_to_income"] = out["DTI"].astype(float)
-        elif "existing_debt" in out.columns and "income" in out.columns:
-            denom = out["income"].replace(0, np.nan)
-            dti = (out["existing_debt"] / denom).fillna(0.0)
-            out["debt_to_income"] = dti.clip(0, 10)
-        else:
-            out["debt_to_income"] = 0.0
-    rng = np.random.default_rng(12345)
-    if "credit_history_length" not in out.columns:
-        out["credit_history_length"] = rng.integers(0, 30, n)
-    if "num_delinquencies" not in out.columns:
-        out["num_delinquencies"] = np.minimum(rng.poisson(0.2, n), 10)
-    if "requested_amount" not in out.columns:
-        out["requested_amount"] = out.get("loan_amount", 0)
-    if "loan_term_months" not in out.columns:
-        out["loan_term_months"] = out.get("loan_duration_months", 0)
-    return dedupe_columns(out)
