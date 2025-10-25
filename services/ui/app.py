@@ -437,6 +437,26 @@ for idx, (sector, industry, agent, desc, status, emoji) in enumerate(AGENTS):
         else:
             st.markdown("—")
 
+available_agents = [agent for _, _, agent, _, status, _ in AGENTS if status.lower() == "available"]
+if available_agents:
+    launch_cols = st.columns([3, 1])
+    with launch_cols[0]:
+        default_agent = st.session_state.get("selected_agent_label")
+        default_index = 0
+        if default_agent in available_agents:
+            default_index = available_agents.index(default_agent)
+        selected_agent_from_table = st.selectbox(
+            "Launch available agent",
+            available_agents,
+            index=default_index,
+            key="available_agent_selector",
+        )
+    with launch_cols[1]:
+        if st.button("Launch", key="launch_available_agent"):
+            st.session_state["selected_agent_label"] = selected_agent_from_table
+            st.session_state["main_panel_selector"] = "🤖 Credit appraisal by AI assistant"
+            st.experimental_rerun()
+
 # Try Now button
 st.markdown("---")
 st.markdown("""
