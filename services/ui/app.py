@@ -43,94 +43,10 @@ if "logged_in" not in st.session_state:
 if "user_info" not in st.session_state:
     st.session_state.user_info = {}
 
-
-def ensure_user_info_defaults() -> Dict[str, Any]:
-    info = st.session_state.setdefault("user_info", {})
-    info.setdefault("name", "")
-    info.setdefault("email", "")
-    info.setdefault("flagged", False)
-    info.setdefault("timestamp", datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
-    return info
-
-
-def reset_collateral_session() -> None:
-    st.session_state["asset_appraisal_result"] = None
-    st.session_state["asset_verified_result"] = None
-    st.session_state["asset_collateral_df"] = None
-    st.session_state["asset_collateral_path"] = ""
-    st.session_state["asset_collateral_credit_path"] = ""
-
-
-def reset_kyc_registry() -> None:
-    st.session_state["kyc_registry"] = None
-    st.session_state["kyc_registry_ready"] = None
-    st.session_state["kyc_registry_path"] = ""
-    st.session_state["kyc_registry_ready_path"] = ""
-    st.session_state["kyc_registry_generated_at"] = ""
-
-
-def go_to_public_home(*, clear_user: bool = False) -> None:
-    reset_collateral_session()
-    reset_kyc_registry()
-    st.session_state.workflow_stage = "data"
-    st.session_state.public_stage = "landing"
-    st.session_state.selected_agent = None
-    st.session_state.logged_in = False
-    if clear_user:
-        st.session_state.user_info = {
-            "name": "",
-            "email": "",
-            "flagged": False,
-            "timestamp": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-        }
-    else:
-        ensure_user_info_defaults()
-
-
-def logout_user() -> None:
-    go_to_public_home(clear_user=True)
-
-
-ensure_user_info_defaults()
-
-if "workflow_stage" not in st.session_state:
-    st.session_state.workflow_stage = "data"
-
-if "public_stage" not in st.session_state:
-    st.session_state.public_stage = "landing"
-
-if "selected_agent" not in st.session_state:
-    st.session_state.selected_agent = None
-
-if "asset_appraisal_result" not in st.session_state:
-    st.session_state["asset_appraisal_result"] = None
-
-if "asset_verified_result" not in st.session_state:
-    st.session_state["asset_verified_result"] = None
-
-if "asset_collateral_df" not in st.session_state:
-    st.session_state["asset_collateral_df"] = None
-
-if "asset_collateral_path" not in st.session_state:
-    st.session_state["asset_collateral_path"] = ""
-
-if "asset_collateral_credit_path" not in st.session_state:
-    st.session_state["asset_collateral_credit_path"] = ""
-
-if "kyc_registry" not in st.session_state:
-    st.session_state["kyc_registry"] = None
-
-if "kyc_registry_ready" not in st.session_state:
-    st.session_state["kyc_registry_ready"] = None
-
-if "kyc_registry_path" not in st.session_state:
-    st.session_state["kyc_registry_path"] = ""
-
-if "kyc_registry_ready_path" not in st.session_state:
-    st.session_state["kyc_registry_ready_path"] = ""
-
-if "kyc_registry_generated_at" not in st.session_state:
-    st.session_state["kyc_registry_generated_at"] = ""
+st.session_state.user_info.setdefault("flagged", False)
+st.session_state.user_info.setdefault(
+    "timestamp", datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+)
 
 # ────────────────────────────────
 # HELPERS
@@ -444,29 +360,20 @@ footer {
 
 
 def render_pipeline_hero(active_stage: str) -> None:
-    step_blocks: List[str] = []
-    for idx, (key, title, desc) in enumerate(PIPELINE_STAGES, start=1):
-        is_active = key == active_stage
-        step_class = "pipeline-step" + (" pipeline-step--active" if is_active else "")
-        index_class = "pipeline-step__index" + (
-            " pipeline-step__index--active" if is_active else ""
-        )
-        step_blocks.append(
-            textwrap.dedent(
-                f"""
-                <div class='{step_class}'>
-                    <div class='{index_class}'>{idx}</div>
-                    <div class='pipeline-step__body'>
-                        <div class='pipeline-step__title'>{title}</div>
-                        <p>{desc}</p>
-                    </div>
-                </div>
-                """
-            ).strip()
-        )
+    steps_html = "".join(
+        f"""
+        <div class='pipeline-step{' pipeline-step--active' if key == active_stage else ''}'>
+            <div class='pipeline-step__index{' pipeline-step__index--active' if key == active_stage else ''}'>{idx}</div>
+            <div class='pipeline-step__body'>
+                <div class='pipeline-step__title'>{title}</div>
+                <p>{desc}</p>
+            </div>
+        </div>
+        """
+        for idx, (key, title, desc) in enumerate(PIPELINE_STAGES, start=1)
+    )
 
-    steps_html = "\n".join(step_blocks)
-    hero_html = textwrap.dedent(
+    st.markdown(
         f"""
         <div class='pipeline-hero'>
             <div class='pipeline-hero__header'>
@@ -478,48 +385,377 @@ def render_pipeline_hero(active_stage: str) -> None:
                 {steps_html}
             </div>
         </div>
-        """
-    ).strip()
+        """,
+        unsafe_allow_html=True,
+    )
 
-    st.markdown(hero_html, unsafe_allow_html=True)
+
+# ────────────────────────────────
+# LAYOUT
+# ────────────────────────────────
+if not st.session_state.logged_in:
+    col1, col2 = st.columns([1.1, 1.9], gap="large")
+
+    with col1:
+        st.markdown("<div class='left-box'>", unsafe_allow_html=True)
+        logo_path = load_image("people_logo")
+        if logo_path:
+            st.image(logo_path, width=160)
+        else:
+            logo_upload = st.file_uploader("Upload People Logo", type=["jpg", "png", "webp"], key="upload_logo")
+            if logo_upload:
+                save_uploaded_image(logo_upload, "people_logo")
+                st.success("✅ Logo uploaded successfully! Refreshing...")
+                st.rerun()
+
+        st.markdown("""
+        <h1>✊ Let’s Build an AI by the People, for the People</h1>
+        <h3>⚙️ Ready-to-Use AI Agent Sandbox — From Sandbox to Production</h3>
+        <p>
+        A world-class open innovation space where anyone can build, test, and deploy AI agents using open-source code, explainable models, and modular templates.<br><br>
+        For developers, startups, and enterprises — experiment, customize, and scale AI without barriers.<br><br>
+        <b>Privacy & Data Sovereignty:</b> Each agent runs under strict privacy controls and complies with GDPR & Vietnam Data Law 2025. Only anonymized or synthetic data is used — your data never leaves your environment.<br><br>
+        <b>From Sandbox to Production:</b> Start with ready-to-use agent templates, adapt, test, and deploy — all on GPU-as-a-Service Cloud with zero CAPEX.<br><br>
+        You dream it — now you can build it.
+        </p>
+        <div style="text-align:center;margin-top:2rem;">
+            <a href="#credit_poc" style="text-decoration:none;">
+                <button style="background:linear-gradient(90deg,#2563eb,#1d4ed8);
+                               border:none;border-radius:12px;color:white;
+                               padding:16px 32px;font-size:18px;cursor:pointer;">
+                    🚀 Start Building Now
+                </button>
+            </a>
+        </div>
+        """, unsafe_allow_html=True)
+        st.markdown("</div>", unsafe_allow_html=True)
+
+    with col2:
+        st.markdown("<div class='right-box'>", unsafe_allow_html=True)
+        st.markdown("<h2>📊 Global AI Agent Library</h2>", unsafe_allow_html=True)
+        st.caption("Explore sectors, industries, and ready-to-use AI agents across domains.")
+
+        rows = []
+        for sector, industry, agent, desc, status, emoji in AGENTS:
+            rating = round(random.uniform(3.5, 5.0), 1)
+            users = random.randint(800, 9000)
+            comments = random.randint(5, 120)
+            image_html = render_image_tag(agent, industry, emoji)
+            rows.append({
+                "🖼️": image_html,
+                "🏭 Sector": sector,
+                "🧩 Industry": industry,
+                "🤖 Agent": agent,
+                "🧠 Description": desc,
+                "📶 Status": f'<span class="status-{status.replace(" ", "")}">{status}</span>',
+                "⭐ Rating": "⭐" * int(rating) + "☆" * (5 - int(rating)),
+                "👥 Users": users,
+                "💬 Comments": comments
+            })
+        df = pd.DataFrame(rows)
+        st.write(df.to_html(escape=False, index=False), unsafe_allow_html=True)
+        st.markdown("</div>", unsafe_allow_html=True)
+
+    # ─────────────────────────────────────────────
+    # WORKFLOW PIPELINE — WITH LOOPBACK
+    # ─────────────────────────────────────────────
+    st.markdown(
+        """
+        ### 🛠️ Workflow Pipeline Overview
+        1. **Synthetic Data Generator** – Create realistic datasets for testing.
+        2. **Anonymize & Sanitize Data** – Drop PII and scrub sensitive text.
+        3. **Credit Appraisal by AI Assistant** – Run agent-driven credit decisions.
+        4. **Human Review** – Evaluate and adjust AI outputs.
+        5. **Training (Feedback → Retrain)** – Feed human-labelled data back into training.
+        6. **Loop Back** – Re-run the agent with the newly trained model.
+        """
+    )
+
+    # ────────────────────────────────
+    # FOOTER
+    # ────────────────────────────────
+    st.markdown("<footer>Made with ❤️ by Dzoan Nguyen— Open AI Sandbox Initiative</footer>", unsafe_allow_html=True)
+
+    # ── Login Screen
+    with st.container():
+        st.markdown("### 🔐 Login (Demo Mode)")
+        col1, col2, col3 = st.columns([1, 1, 1])
+        with col1:
+            username = st.text_input("Username", value="", placeholder="e.g. dzoan")
+        with col2:
+            email = st.text_input("Email", value="", placeholder="e.g. dzoan@demo.local")
+        with col3:
+            password = st.text_input("Password", type="password", placeholder="Enter any password")
+
+        login_btn = st.button("Login", type="primary", use_container_width=True)
+
+        if login_btn:
+            if username.strip() and email.strip():
+                st.session_state.user_info.update(
+                    {
+                        "name": username.strip(),
+                        "email": email.strip(),
+                        "flagged": False,
+                        "timestamp": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                    }
+                )
+                st.session_state.logged_in = True
+                st.session_state["login_flash"] = username.strip()
+            else:
+                st.error("Please enter both username and email to continue.")
+
+    st.stop()
 
 
 # ─────────────────────────────────────────────
-# GLOBAL UTILS
+# HEADER — USER INFO + SECURITY
 
-BANNED_NAMES = {"race", "gender", "religion", "ethnicity", "ssn", "national_id"}
-PII_COLS = {"customer_name", "name", "email", "phone", "address", "ssn", "national_id", "dob"}
+flash_user = st.session_state.pop("login_flash", None)
+if flash_user:
+    st.success(f"✅ Logged in as {flash_user}")
 
-EMAIL_RE = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
-PHONE_RE = re.compile(r"\+?\d[\d\-\s]{6,}\d")
+st.title("💳 AI Credit Appraisal Platform")
+st.caption("Generate, sanitize, and appraise credit with AI agent Power and Human Decisions  .")
 
-def dedupe_columns(df: pd.DataFrame) -> pd.DataFrame:
-    return df.loc[:, ~df.columns.duplicated(keep="last")]
+    st.markdown(
+        f"""
+        <div class='pipeline-hero'>
+            <div class='pipeline-hero__header'>
+                <div class='pipeline-hero__eyebrow'>Agent Workflow</div>
+                <h1>💳 AI Credit Appraisal Platform</h1>
+                <p>Generate, sanitize, and appraise credit with AI agent power and human decisions.</p>
+            </div>
+            <div class='pipeline-steps'>
+                {steps_html}
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
-def scrub_text_pii(s):
-    if not isinstance(s, str):
-        return s
-    s = EMAIL_RE.sub("", s)
-    s = PHONE_RE.sub("", s)
-    return s.strip()
+    c1, c2 = st.columns([1, 2])
+    with c1:
+        code = st.selectbox(
+            "Currency",
+            list(CURRENCY_OPTIONS.keys()),
+            index=list(CURRENCY_OPTIONS.keys()).index(st.session_state["currency_code"]),
+            help="All monetary fields will be in this local currency.",
+        )
+        if code != st.session_state["currency_code"]:
+            st.session_state["currency_code"] = code
+            set_currency_defaults()
+    with c2:
+        st.info(
+            f"Amounts will be generated in **{st.session_state['currency_label']}**.",
+            icon="💰",
+        )
 
-def drop_pii_columns(df: pd.DataFrame):
-    original_cols = list(df.columns)
-    keep_cols = [c for c in original_cols if all(k not in c.lower() for k in PII_COLS)]
-    dropped = [c for c in original_cols if c not in keep_cols]
-    out = df[keep_cols].copy()
-    for c in out.select_dtypes(include="object"):
-        out[c] = out[c].apply(scrub_text_pii)
-    return dedupe_columns(out), dropped
+    rows = st.slider("Number of rows to generate", 50, 2000, 200, step=50)
+    non_bank_ratio = st.slider("Share of non-bank customers", 0.0, 1.0, 0.30, 0.05)
 
-def strip_policy_banned(df: pd.DataFrame) -> pd.DataFrame:
-    keep = []
-    for c in df.columns:
-        cl = c.lower()
-        if cl in BANNED_NAMES:
-            continue
-        keep.append(c)
-    return df[keep]
+    colA, colB = st.columns(2)
+    with colA:
+        if st.button("🔴 Generate RAW Synthetic Data (with PII)", use_container_width=True):
+            raw_df = append_user_info(generate_raw_synthetic(rows, non_bank_ratio))
+            st.session_state.synthetic_raw_df = raw_df
+            raw_path = save_to_runs(raw_df, "synthetic_raw")
+            st.success(
+                f"Generated RAW (PII) dataset with {rows} rows in {st.session_state['currency_label']}. Saved to {raw_path}"
+            )
+            st.dataframe(raw_df.head(10), use_container_width=True)
+            st.download_button(
+                "⬇️ Download RAW CSV",
+                raw_df.to_csv(index=False).encode("utf-8"),
+                os.path.basename(raw_path),
+                "text/csv",
+            )
+
+    with colB:
+        if st.button("🟢 Generate ANON Synthetic Data (ready for agent)", use_container_width=True):
+            anon_df = append_user_info(generate_anon_synthetic(rows, non_bank_ratio))
+            st.session_state.synthetic_df = anon_df
+            anon_path = save_to_runs(anon_df, "synthetic_anon")
+            st.success(
+                f"Generated ANON dataset with {rows} rows in {st.session_state['currency_label']}. Saved to {anon_path}"
+            )
+            st.dataframe(anon_df.head(10), use_container_width=True)
+            st.download_button(
+                "⬇️ Download ANON CSV",
+                anon_df.to_csv(index=False).encode("utf-8"),
+                os.path.basename(anon_path),
+                "text/csv",
+            )
+
+    st.markdown("---")
+    st.subheader("🧹 Upload & Anonymize Customer Data")
+    st.markdown("Upload your **real CSV**. We drop PII columns and scrub emails/phones in text fields.")
+
+    uploaded = st.file_uploader("Upload CSV file", type=["csv"], key="data_stage_uploader")
+    if uploaded:
+        try:
+            df = pd.read_csv(uploaded)
+        except Exception as exc:
+            st.error(f"Could not read CSV: {exc}")
+            st.stop()
+
+        st.write("📊 Original Data Preview:")
+        st.dataframe(dedupe_columns(df.head(5)), use_container_width=True)
+
+        sanitized, dropped_cols = drop_pii_columns(df)
+        sanitized = append_user_info(sanitized)
+        sanitized = dedupe_columns(sanitized)
+        st.session_state.anonymized_df = sanitized
+
+def ensure_application_ids(df: pd.DataFrame) -> pd.DataFrame:
+    out = df.copy()
+    if "application_id" not in out.columns:
+        out["application_id"] = [f"APP_{i:04d}" for i in range(1, len(out) + 1)]
+    out["application_id"] = out["application_id"].astype(str)
+    return out
+
+def sanitize_dataset(df: pd.DataFrame) -> pd.DataFrame:
+    safe = dedupe_columns(df)
+    safe, _ = drop_pii_columns(safe)
+    safe = strip_policy_banned(safe)
+    safe = dedupe_columns(safe)
+    return ensure_application_ids(safe)
+
+def resolve_dataset_choice(choice: str, *, sanitize: bool = True) -> Optional[pd.DataFrame]:
+    df: Optional[pd.DataFrame] = None
+    if choice == "Use synthetic (ANON)":
+        df = st.session_state.get("synthetic_df")
+    elif choice == "Use synthetic (RAW – auto-sanitize)":
+        df = st.session_state.get("synthetic_raw_df")
+    elif choice == "Use anonymized dataset":
+        df = st.session_state.get("anonymized_df")
+    elif choice == "Use collateral verification output":
+        df = st.session_state.get("asset_verified_result") or st.session_state.get("asset_collateral_df")
+    elif choice == "Use KYC registry (anonymized)":
+        df = st.session_state.get("kyc_registry_ready")
+    elif choice == "Upload manually":
+        up_bytes = st.session_state.get("manual_upload_bytes")
+        if up_bytes:
+            try:
+                df = pd.read_csv(io.BytesIO(up_bytes))
+            except Exception:
+                df = None
+
+    if df is None:
+        return None
+
+    df = dedupe_columns(df)
+    if sanitize:
+        try:
+            df = sanitize_dataset(df)
+        except Exception:
+            df = ensure_application_ids(df)
+    else:
+        df = ensure_application_ids(df)
+    return df
+
+def build_collateral_report(
+    df: pd.DataFrame,
+    *,
+    confidence_threshold: float = 0.88,
+    value_ratio: float = 0.8,
+) -> tuple[pd.DataFrame, List[str]]:
+    if df is None or df.empty:
+        return pd.DataFrame(), []
+
+    records = df.to_dict(orient="records")
+    total = len(records)
+    progress = st.progress(0.0) if total > 1 else None
+    session = requests.Session()
+    rows: List[Dict[str, Any]] = []
+    errors: List[str] = []
+
+    for idx, record in enumerate(records, start=1):
+        asset_type = str(record.get("collateral_type") or "Collateral Asset")
+        declared_value = _to_float(record.get("collateral_value"), 0.0)
+        loan_amount = _to_float(record.get("loan_amount"), 0.0)
+        metadata = {
+            "application_id": record.get("application_id"),
+            "declared_value": declared_value,
+            "loan_amount": loan_amount,
+            "currency_code": record.get("currency_code") or st.session_state.get("currency_code"),
+        }
+
+        payload = {"asset_type": asset_type, "metadata": json.dumps(metadata, default=str)}
+
+        estimated_value = declared_value
+        confidence = 0.0
+        asset_result: Dict[str, Any] = {}
+        error_message = ""
+
+        try:
+            response = session.post(
+                f"{API_URL}/v1/agents/asset_appraisal/run",
+                data=payload,
+                timeout=30,
+            )
+            response.raise_for_status()
+            asset_result = response.json().get("result", {}) or {}
+            estimated_value = _to_float(asset_result.get("estimated_value"), declared_value)
+            confidence = _to_float(asset_result.get("confidence"), 0.0)
+        except Exception as exc:  # pragma: no cover - defensive
+            error_message = str(exc)
+            errors.append(error_message)
+
+        value_threshold = 0.0
+        if loan_amount:
+            value_threshold = loan_amount * value_ratio
+        elif declared_value:
+            value_threshold = declared_value * value_ratio
+
+        reasons: List[str] = []
+        meets_confidence = confidence >= confidence_threshold
+        meets_value = True if value_threshold == 0 else estimated_value >= value_threshold
+
+        if not meets_confidence:
+            reasons.append(
+                f"Confidence {confidence:.2f} below threshold {confidence_threshold:.2f}"
+            )
+        if not meets_value:
+            if loan_amount:
+                reasons.append(
+                    f"Estimated value {estimated_value:,.0f} below {value_ratio:.0%} of loan {loan_amount:,.0f}"
+                )
+            else:
+                reasons.append(
+                    f"Estimated value {estimated_value:,.0f} below threshold {value_threshold:,.0f}"
+                )
+        if error_message:
+            reasons.append(f"Asset agent error: {error_message}")
+        if not reasons:
+            reasons.append("Confidence and value thresholds satisfied")
+
+        verified = meets_confidence and meets_value and not error_message
+        status_label = "Verified" if verified else "Failed"
+
+        enriched = dict(record)
+        enriched.update(
+            {
+                "collateral_estimated_value": round(estimated_value, 2),
+                "collateral_confidence": round(confidence, 4),
+                "collateral_verified": bool(verified),
+                "collateral_status": status_label,
+                "collateral_verification_reason": "; ".join(reasons),
+                "collateral_agent_asset_id": asset_result.get("asset_id"),
+                "collateral_agent_model": asset_result.get("model_name"),
+                "collateral_agent_timestamp": asset_result.get("timestamp"),
+                "collateral_value_threshold": round(value_threshold, 2),
+                "collateral_checked_at": datetime.datetime.utcnow().isoformat(),
+            }
+        )
+        rows.append(enriched)
+
+        if progress is not None:
+            progress.progress(idx / total)
+
+    if progress is not None:
+        progress.empty()
+
+    return dedupe_columns(pd.DataFrame(rows)), errors
 
 def ensure_application_ids(df: pd.DataFrame) -> pd.DataFrame:
     out = df.copy()
@@ -694,873 +930,6 @@ def save_to_runs(df: pd.DataFrame, prefix: str) -> str:
     fpath = os.path.join(RUNS_DIR, fname)
     dedupe_columns(df).to_csv(fpath, index=False)
     return fpath
-
-def try_json(x):
-    if isinstance(x, (dict, list)):
-        return x
-    if not isinstance(x, str):
-        return None
-    try:
-        return json.loads(x)
-    except Exception:
-        return None
-
-def _safe_json(x):
-    if isinstance(x, dict):
-        return x
-    if isinstance(x, str) and x.strip():
-        try:
-            return json.loads(x)
-        except Exception:
-            return {}
-    return {}
-
-def _to_float(value: Any, default: float = 0.0) -> float:
-    try:
-        return float(value)
-    except (TypeError, ValueError):
-        return default
-
-def fmt_currency_label(base: str) -> str:
-    sym = st.session_state.get("currency_symbol", "")
-    return f"{base} ({sym})" if sym else base
-
-# ─────────────────────────────────────────────
-# CURRENCY CATALOG
-
-CURRENCY_OPTIONS = {
-    # code: (label, symbol, fx to apply on USD-like base generated numbers)
-    "USD": ("USD $", "$", 1.0),
-    "EUR": ("EUR €", "€", 0.93),
-    "GBP": ("GBP £", "£", 0.80),
-    "JPY": ("JPY ¥", "¥", 150.0),
-    "VND": ("VND ₫", "₫", 24000.0),
-}
-
-def set_currency_defaults():
-    if "currency_code" not in st.session_state:
-        st.session_state["currency_code"] = "USD"
-    label, symbol, fx = CURRENCY_OPTIONS[st.session_state["currency_code"]]
-    st.session_state["currency_label"] = label
-    st.session_state["currency_symbol"] = symbol
-    st.session_state["currency_fx"] = fx
-
-set_currency_defaults()
-
-# ─────────────────────────────────────────────
-# DASHBOARD HELPERS (Plotly, dark theme)
-
-def _kpi_card(label: str, value: str, sublabel: str | None = None):
-    st.markdown(
-        f"""
-        <div style="background:#0e1117;border:1px solid #2a2f3e;border-radius:12px;padding:14px 16px;margin-bottom:10px;">
-          <div style="font-size:12px;color:#9aa4b2;text-transform:uppercase;letter-spacing:.06em;">{label}</div>
-          <div style="font-size:28px;font-weight:700;color:#e6edf3;line-height:1.1;margin-top:2px;">{value}</div>
-          {f'<div style="font-size:12px;color:#9aa4b2;margin-top:6px;">{sublabel}</div>' if sublabel else ''}
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-
-def render_credit_dashboard(df: pd.DataFrame, currency_symbol: str = ""):
-    """
-    Renders the whole dashboard (TOP-10s → Opportunities → KPIs & pies/bars → Mix table).
-    Keeps decision filter in the table only.
-    """
-    if df is None or df.empty:
-        st.info("No data to visualize yet.")
-        return
-
-    cols = df.columns
-
-    # ─────────────── TOP 10s FIRST ───────────────
-    st.markdown("## 🔝 Top 10 Snapshot")
-
-    # Top 10 loans approved
-    if {"decision", "loan_amount", "application_id"} <= set(cols):
-        top_approved = df[df["decision"].astype(str).str.lower() == "approved"].copy()
-        if not top_approved.empty:
-            top_approved = top_approved.sort_values("loan_amount", ascending=False).head(10)
-            fig = px.bar(
-                top_approved,
-                x="loan_amount",
-                y="application_id",
-                orientation="h",
-                title="Top 10 Approved Loans",
-                labels={"loan_amount": f"Loan Amount {currency_symbol}", "application_id": "Application"},
-            )
-            fig.update_layout(margin=dict(l=10, r=10, t=50, b=10), height=420, template="plotly_dark")
-            st.plotly_chart(fig, use_container_width=True)
-        else:
-            st.info("No approved loans available to show top 10.")
-
-    # Top 10 collateral types by average value
-    if {"collateral_type", "collateral_value"} <= set(cols):
-        cprof = df.groupby("collateral_type", dropna=False).agg(
-            avg_value=("collateral_value", "mean"),
-            cnt=("collateral_type", "count")
-        ).reset_index()
-        if not cprof.empty:
-            cprof = cprof.sort_values("avg_value", ascending=False).head(10)
-            fig = px.bar(
-                cprof,
-                x="avg_value",
-                y="collateral_type",
-                orientation="h",
-                title="Top 10 Collateral Types (Avg Value)",
-                labels={"avg_value": f"Avg Value {currency_symbol}", "collateral_type": "Collateral Type"},
-                hover_data=["cnt"]
-            )
-            fig.update_layout(margin=dict(l=10, r=10, t=50, b=10), height=420, template="plotly_dark")
-            st.plotly_chart(fig, use_container_width=True)
-
-    # Top 10 reasons for denial (from rule_reasons False flags)
-    if "rule_reasons" in cols and "decision" in cols:
-        denied = df[df["decision"].astype(str).str.lower() == "denied"].copy()
-        reasons_count = {}
-        for _, r in denied.iterrows():
-            rr = _safe_json(r.get("rule_reasons"))
-            if isinstance(rr, dict):
-                for k, v in rr.items():
-                    if v is False:
-                        reasons_count[k] = reasons_count.get(k, 0) + 1
-        if reasons_count:
-            items = pd.DataFrame(sorted(reasons_count.items(), key=lambda x: x[1], reverse=True),
-                                 columns=["reason", "count"]).head(10)
-            fig = px.bar(
-                items, x="count", y="reason", orientation="h",
-                title="Top 10 Reasons for Denial",
-                labels={"count": "Count", "reason": "Rule"},
-            )
-            fig.update_layout(margin=dict(l=10, r=10, t=50, b=10), height=420, template="plotly_dark")
-            st.plotly_chart(fig, use_container_width=True)
-        else:
-            st.info("No denial reasons detected.")
-
-    # Top 10 loan officer performance (approval rate) if officer column present
-    officer_col = None
-    for guess in ("loan_officer", "officer", "reviewed_by", "session_user_name"):
-        if guess in cols:
-            officer_col = guess
-            break
-    if officer_col and "decision" in cols:
-        perf = (
-            df.assign(is_approved=(df["decision"].astype(str).str.lower() == "approved").astype(int))
-              .groupby(officer_col, dropna=False)["is_approved"]
-              .agg(approved_rate="mean", n="count")
-              .reset_index()
-        )
-        if not perf.empty:
-            perf["approved_rate_pct"] = (perf["approved_rate"] * 100).round(1)
-            perf = perf.sort_values(["approved_rate_pct", "n"], ascending=[False, False]).head(10)
-            fig = px.bar(
-                perf, x="approved_rate_pct", y=officer_col, orientation="h",
-                title="Top 10 Loan Officer Approval Rate (this batch)",
-                labels={"approved_rate_pct": "Approval Rate (%)", officer_col: "Officer"},
-                hover_data=["n"]
-            )
-            fig.update_layout(margin=dict(l=10, r=10, t=50, b=10), height=420, template="plotly_dark")
-            st.plotly_chart(fig, use_container_width=True)
-
-    st.markdown("---")
-
-    # ─────────────── OPPORTUNITIES ───────────────
-    st.markdown("## 💡 Opportunities")
-
-    # Short-term loan opportunities (simple heuristic)
-    opp_rows = []
-    if {"income", "loan_amount"}.issubset(cols):
-        term_col = "loan_term_months" if "loan_term_months" in cols else ("loan_duration_months" if "loan_duration_months" in cols else None)
-        if term_col:
-            for _, r in df.iterrows():
-                inc = float(r.get("income", 0) or 0)
-                amt = float(r.get("loan_amount", 0) or 0)
-                term = int(r.get(term_col, 0) or 0)
-                dti = float(r.get("DTI", 0) or 0)
-                if (term >= 36) and (amt <= inc * 0.8) and (dti <= 0.45):
-                    opp_rows.append({
-                        "application_id": r.get("application_id"),
-                        "suggested_term": 24,
-                        "loan_amount": amt,
-                        "income": inc,
-                        "DTI": dti,
-                        "note": "Candidate for short-term plan (<=24m) based on affordability."
-                    })
-    if opp_rows:
-        st.markdown("#### 📎 Short-Term Loan Candidates")
-        st.dataframe(pd.DataFrame(opp_rows).head(25), use_container_width=True, height=320)
-    else:
-        st.info("No short-term loan candidates identified in this batch.")
-
-    st.markdown("#### 🔁 Buyback / Consolidation Beneficiaries")
-    candidates = []
-    need = {"decision", "existing_debt", "loan_amount", "DTI"}
-    if need <= set(cols):
-        for _, r in df.iterrows():
-            dec = str(r.get("decision", "")).lower()
-            debt = float(r.get("existing_debt", 0) or 0)
-            loan = float(r.get("loan_amount", 0) or 0)
-            dti = float(r.get("DTI", 0) or 0)
-            proposal = _safe_json(r.get("proposed_consolidation_loan", {}))
-            has_bb = bool(proposal)
-
-            if dec == "denied" or dti > 0.45 or debt > loan:
-                benefit_score = round((debt / (loan + 1e-6)) * 0.4 + dti * 0.6, 2)
-                candidates.append({
-                    "application_id": r.get("application_id"),
-                    "customer_type": r.get("customer_type"),
-                    "existing_debt": debt,
-                    "loan_amount": loan,
-                    "DTI": dti,
-                    "collateral_type": r.get("collateral_type"),
-                    "buyback_proposed": has_bb,
-                    "buyback_amount": proposal.get("buyback_amount") if has_bb else None,
-                    "benefit_score": benefit_score,
-                    "note": proposal.get("note") if has_bb else None
-                })
-    if candidates:
-        cand_df = pd.DataFrame(candidates).sort_values("benefit_score", ascending=False)
-        st.dataframe(cand_df.head(25), use_container_width=True, height=380)
-    else:
-        st.info("No additional buyback beneficiaries identified.")
-
-    st.markdown("---")
-
-    # ─────────────── PORTFOLIO KPIs ───────────────
-    st.markdown("## 📈 Portfolio Snapshot")
-    c1, c2, c3, c4 = st.columns(4)
-
-    # Approval rate
-    if "decision" in cols:
-        total = len(df)
-        approved = int((df["decision"].astype(str).str.lower() == "approved").sum())
-        rate = (approved / total * 100) if total else 0.0
-        with c1: _kpi_card("Approval Rate", f"{rate:.1f}%", f"{approved} of {total}")
-
-    # Avg approved loan amount
-    if {"decision", "loan_amount"} <= set(cols):
-        ap = df[df["decision"].astype(str).str.lower() == "approved"]["loan_amount"]
-        avg_amt = ap.mean() if len(ap) else 0.0
-        with c2: _kpi_card("Avg Approved Amount", f"{currency_symbol}{avg_amt:,.0f}")
-
-    # Decision time (if present)
-    if {"created_at", "decision_at"} <= set(cols):
-        try:
-            t = (pd.to_datetime(df["decision_at"]) - pd.to_datetime(df["created_at"])).dt.total_seconds() / 60.0
-            avg_min = float(t.mean())
-            with c3: _kpi_card("Avg Decision Time", f"{avg_min:.1f} min")
-        except Exception:
-            with c3: _kpi_card("Avg Decision Time", "—")
-
-    # Non-bank share
-    if "customer_type" in cols:
-        nb = int((df["customer_type"].astype(str).str.lower() == "non-bank").sum())
-        total = len(df)
-        share = (nb / total * 100) if total else 0.0
-        with c4: _kpi_card("Non-bank Share", f"{share:.1f}%", f"{nb} of {total}")
-
-    # ─────────────── COMPOSITION & RISK ───────────────
-    st.markdown("## 🧭 Composition & Risk")
-
-    # Approval vs Denial (pie)
-    if "decision" in cols:
-        pie_df = df["decision"].value_counts().rename_axis("Decision").reset_index(name="Count")
-        fig = px.pie(pie_df, names="Decision", values="Count", title="Decision Mix")
-        fig.update_layout(margin=dict(l=10, r=10, t=60, b=10), height=360, template="plotly_dark")
-        st.plotly_chart(fig, use_container_width=True)
-
-    # Avg DTI / LTV by decision (grouped bars)
-    have_dti = "DTI" in cols
-    have_ltv = "LTV" in cols
-    if "decision" in cols and (have_dti or have_ltv):
-        agg_map = {}
-        if have_dti: agg_map["avg_DTI"] = ("DTI", "mean")
-        if have_ltv: agg_map["avg_LTV"] = ("LTV", "mean")
-        grp = df.groupby("decision").agg(**agg_map).reset_index()
-        melted = grp.melt(id_vars=["decision"], var_name="metric", value_name="value")
-        fig = px.bar(melted, x="decision", y="value", color="metric",
-                     barmode="group", title="Average DTI / LTV by Decision")
-        fig.update_layout(margin=dict(l=10, r=10, t=60, b=10), height=360, template="plotly_dark")
-        st.plotly_chart(fig, use_container_width=True)
-
-    # Loan term mix (stacked)
-    term_col = "loan_term_months" if "loan_term_months" in cols else ("loan_duration_months" if "loan_duration_months" in cols else None)
-    if term_col and "decision" in cols:
-        mix = df.groupby([term_col, "decision"]).size().reset_index(name="count")
-        fig = px.bar(
-            mix, x=term_col, y="count", color="decision", title="Loan Term Mix",
-            labels={term_col: "Term (months)", "count": "Count"}, barmode="stack"
-        )
-        fig.update_layout(margin=dict(l=10, r=10, t=60, b=10), height=360, template="plotly_dark")
-        st.plotly_chart(fig, use_container_width=True)
-
-    # Collateral avg value by type (bar)
-    if {"collateral_type", "collateral_value"} <= set(cols):
-        cprof = df.groupby("collateral_type").agg(
-            avg_col=("collateral_value", "mean"),
-            cnt=("collateral_type", "count")
-        ).reset_index()
-        fig = px.bar(
-            cprof.sort_values("avg_col", ascending=False),
-            x="collateral_type", y="avg_col",
-            title=f"Avg Collateral Value by Type ({currency_symbol})",
-            hover_data=["cnt"]
-        )
-        fig.update_layout(margin=dict(l=10, r=10, t=60, b=10), height=360, template="plotly_dark")
-        st.plotly_chart(fig, use_container_width=True)
-
-    # Top proposed plans (horizontal bar)
-    if "proposed_loan_option" in cols:
-        plans = df["proposed_loan_option"].dropna().astype(str)
-        if len(plans) > 0:
-            plan_types = []
-            for s in plans:
-                p = _safe_json(s)
-                plan_types.append(p.get("type") if isinstance(p, dict) and "type" in p else s)
-            plan_df = pd.Series(plan_types).value_counts().head(10).rename_axis("plan").reset_index(name="count")
-            fig = px.bar(
-                plan_df, x="count", y="plan", orientation="h",
-                title="Top 10 Proposed Plans"
-            )
-            fig.update_layout(margin=dict(l=10, r=10, t=60, b=10), height=360, template="plotly_dark")
-            st.plotly_chart(fig, use_container_width=True)
-
-    # Customer mix table (bank vs non-bank)
-    if "customer_type" in cols:
-        mix = df["customer_type"].value_counts().rename_axis("Customer Type").reset_index(name="Count")
-        mix["Ratio"] = (mix["Count"] / mix["Count"].sum()).round(3)
-        st.markdown("### 👥 Customer Mix")
-        st.dataframe(mix, use_container_width=True, height=220)
-# ─────────────────────────────────────────────
-# DATA GENERATORS
-
-
-def _rng_choice(rng: np.random.Generator, items: List[Any], *, weights: Optional[List[float]] = None) -> Any:
-    if weights is not None:
-        return rng.choice(items, p=np.array(weights) / np.sum(weights))
-    return rng.choice(items)
-
-
-def generate_kyc_registry(base_df: Optional[pd.DataFrame], size: int = 8) -> pd.DataFrame:
-    rng = np.random.default_rng()
-    base = ensure_application_ids(base_df) if isinstance(base_df, pd.DataFrame) and not base_df.empty else None
-    if base is not None:
-        replace = len(base) < size
-        sample = base.sample(n=size, replace=replace, random_state=int(rng.integers(0, 1_000_000)))
-        sample = sample.reset_index(drop=True)
-    else:
-        sample = pd.DataFrame()
-
-    names = [
-        "Alice Nguyen",
-        "Bao Tran",
-        "Caroline Pham",
-        "Daniel Ho",
-        "Emma Vu",
-        "Felix Lam",
-        "Gia Le",
-        "Huy Do",
-        "Isabella Dang",
-        "Julian Khang",
-    ]
-    countries = [
-        "Vietnam",
-        "Singapore",
-        "United States",
-        "United Kingdom",
-        "France",
-        "Germany",
-        "Canada",
-        "Australia",
-        "Japan",
-        "South Korea",
-    ]
-    owners = ["Alex Ho", "Mia Tran", "Duy Pham", "Laura Chen", "Oliver Nguyen"]
-    pep_outcomes = ["No match", "Possible match", "Confirmed"]
-    aml_risks = ["Low", "Medium", "High", "Critical"]
-    aml_weights = [0.58, 0.26, 0.12, 0.04]
-    kyc_statuses = ["Cleared", "Pending Docs", "Enhanced Due Diligence"]
-    doc_statuses = ["Validated", "Expired", "Re-requested"]
-
-    today = datetime.datetime.now()
-    records: List[Dict[str, Any]] = []
-    for idx in range(size):
-        base_row = sample.iloc[idx] if not sample.empty else {}
-        application_id = str(base_row.get("application_id", f"APP_{idx+1:04d}"))
-        full_name = base_row.get("customer_name") or base_row.get("name") or rng.choice(names)
-        alias = f"Client-{application_id[-4:]}"
-        country = base_row.get("country") or _rng_choice(rng, countries)
-
-        aml_risk = _rng_choice(rng, aml_risks, weights=aml_weights)
-        pep_status = _rng_choice(rng, pep_outcomes, weights=[0.78, 0.17, 0.05])
-        kyc_state = _rng_choice(rng, kyc_statuses, weights=[0.64, 0.23, 0.13])
-        doc_state = _rng_choice(rng, doc_statuses, weights=[0.72, 0.18, 0.10])
-
-        watch_hits = int(rng.integers(0, 2))
-        if aml_risk in {"High", "Critical"}:
-            watch_hits = int(rng.integers(1, 4))
-        elif pep_status != "No match":
-            watch_hits = int(rng.integers(1, 3))
-
-        last_review = today - datetime.timedelta(days=int(rng.integers(2, 90)))
-        next_refresh = last_review + datetime.timedelta(days=int(rng.integers(45, 150)))
-
-        compliance_notes = {
-            "Cleared": "Standard KYC completed. Continuous transaction monitoring in place.",
-            "Pending Docs": "Awaiting updated proof of income and national ID renewal.",
-            "Enhanced Due Diligence": "High exposure market. Manual review scheduled with compliance officer.",
-        }[kyc_state]
-
-        records.append(
-            {
-                "kyc_reference": f"KYC-{today.strftime('%y%m')}-{idx+1:03d}",
-                "application_id": application_id,
-                "customer_name": full_name,
-                "customer_alias": alias,
-                "country": country,
-                "aml_risk": aml_risk,
-                "pep_status": pep_status,
-                "kyc_status": kyc_state,
-                "document_status": doc_state,
-                "document_score": round(float(rng.uniform(72.0, 98.0)), 1),
-                "watchlist_hits": watch_hits,
-                "kyc_owner": _rng_choice(rng, owners),
-                "kyc_last_reviewed": last_review.strftime("%Y-%m-%d"),
-                "next_refresh_due": next_refresh.strftime("%Y-%m-%d"),
-                "compliance_notes": compliance_notes,
-            }
-        )
-
-    df = pd.DataFrame(records)
-    return dedupe_columns(df)
-
-
-def build_session_kyc_registry(force: bool = False) -> Optional[pd.DataFrame]:
-    existing = st.session_state.get("kyc_registry")
-    if not force and isinstance(existing, pd.DataFrame) and not existing.empty:
-        return existing
-
-    base_candidate = (
-        st.session_state.get("synthetic_raw_df")
-        or st.session_state.get("synthetic_df")
-        or st.session_state.get("anonymized_df")
-    )
-
-    generated_at = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    kyc_df = generate_kyc_registry(base_candidate, size=8)
-    st.session_state["kyc_registry"] = kyc_df
-    st.session_state["kyc_registry_generated_at"] = generated_at
-
-    try:
-        ready = sanitize_dataset(kyc_df)
-    except Exception:
-        ready = ensure_application_ids(kyc_df)
-
-    st.session_state["kyc_registry_ready"] = ready
-
-    try:
-        raw_path = save_to_runs(append_user_info(kyc_df), "kyc_registry")
-        st.session_state["kyc_registry_path"] = raw_path
-    except Exception:  # pragma: no cover - filesystem access
-        st.session_state["kyc_registry_path"] = ""
-
-    try:
-        ready_path = save_to_runs(append_user_info(ready), "kyc_registry_anonymized")
-        st.session_state["kyc_registry_ready_path"] = ready_path
-    except Exception:  # pragma: no cover - filesystem access
-        st.session_state["kyc_registry_ready_path"] = ""
-
-    return kyc_df
-
-
-def generate_raw_synthetic(n: int, non_bank_ratio: float) -> pd.DataFrame:
-    rng = np.random.default_rng(42)
-    names = ["Alice Nguyen","Bao Tran","Chris Do","Duy Le","Emma Tran",
-             "Felix Nguyen","Giang Ho","Hanh Vo","Ivan Pham","Julia Ngo"]
-    emails = [f"{n.split()[0].lower()}.{n.split()[1].lower()}@gmail.com" for n in names]
-    addrs = [
-        "23 Elm St, Boston, MA","19 Pine Ave, San Jose, CA","14 High St, London, UK",
-        "55 Nguyen Hue, Ho Chi Minh","78 Oak St, Chicago, IL","10 Broadway, New York, NY",
-        "8 Rue Lafayette, Paris, FR","21 Königstr, Berlin, DE","44 Maple Dr, Los Angeles, CA","22 Bay St, Toronto, CA"
-    ]
-    is_non = rng.random(n) < non_bank_ratio
-    cust_type = np.where(is_non, "non-bank", "bank")
-
-    df = pd.DataFrame({
-        "application_id": [f"APP_{i:04d}" for i in range(1, n + 1)],
-        "customer_name": np.random.choice(names, n),
-        "email": np.random.choice(emails, n),
-        "phone": [f"+1-202-555-{1000+i:04d}" for i in range(n)],
-        "address": np.random.choice(addrs, n),
-        "national_id": rng.integers(10_000_000, 99_999_999, n),
-        "age": rng.integers(21, 65, n),
-        "income": rng.integers(25_000, 150_000, n),
-        "employment_length": rng.integers(0, 30, n),
-        "loan_amount": rng.integers(5_000, 100_000, n),
-        "loan_duration_months": rng.choice([12, 24, 36, 48, 60, 72], n),
-        "collateral_value": rng.integers(8_000, 200_000, n),
-        "collateral_type": rng.choice(["real_estate","car","land","deposit"], n),
-        "co_loaners": rng.choice([0,1,2], n, p=[0.7, 0.25, 0.05]),
-        "credit_score": rng.integers(300, 850, n),
-        "existing_debt": rng.integers(0, 50_000, n),
-        "assets_owned": rng.integers(10_000, 300_000, n),
-        "current_loans": rng.integers(0, 5, n),
-        "customer_type": cust_type,
-    })
-    eps = 1e-9
-    df["DTI"] = df["existing_debt"] / (df["income"] + eps)
-    df["LTV"] = df["loan_amount"] / (df["collateral_value"] + eps)
-    df["CCR"] = df["collateral_value"] / (df["loan_amount"] + eps)
-    df["ITI"] = (df["loan_amount"] / (df["loan_duration_months"] + eps)) / (df["income"] + eps)
-    df["CWI"] = ((1 - df["DTI"]).clip(0, 1)) * ((1 - df["LTV"]).clip(0, 1)) * (df["CCR"].clip(0, 3))
-
-    fx = st.session_state["currency_fx"]
-    for c in ("income", "loan_amount", "collateral_value", "assets_owned", "existing_debt"):
-        df[c] = (df[c] * fx).round(2)
-    df["currency_code"] = st.session_state["currency_code"]
-    return dedupe_columns(df)
-
-def generate_anon_synthetic(n: int, non_bank_ratio: float) -> pd.DataFrame:
-    rng = np.random.default_rng(42)
-    is_non = rng.random(n) < non_bank_ratio
-    cust_type = np.where(is_non, "non-bank", "bank")
-
-    df = pd.DataFrame({
-        "application_id": [f"APP_{i:04d}" for i in range(1, n + 1)],
-        "age": rng.integers(21, 65, n),
-        "income": rng.integers(25_000, 150_000, n),
-        "employment_length": rng.integers(0, 30, n),
-        "loan_amount": rng.integers(5_000, 100_000, n),
-        "loan_duration_months": rng.choice([12, 24, 36, 48, 60, 72], n),
-        "collateral_value": rng.integers(8_000, 200_000, n),
-        "collateral_type": rng.choice(["real_estate","car","land","deposit"], n),
-        "co_loaners": rng.choice([0,1,2], n, p=[0.7, 0.25, 0.05]),
-        "credit_score": rng.integers(300, 850, n),
-        "existing_debt": rng.integers(0, 50_000, n),
-        "assets_owned": rng.integers(10_000, 300_000, n),
-        "current_loans": rng.integers(0, 5, n),
-        "customer_type": cust_type,
-    })
-    eps = 1e-9
-    df["DTI"] = df["existing_debt"] / (df["income"] + eps)
-    df["LTV"] = df["loan_amount"] / (df["collateral_value"] + eps)
-    df["CCR"] = df["collateral_value"] / (df["loan_amount"] + eps)
-    df["ITI"] = (df["loan_amount"] / (df["loan_duration_months"] + eps)) / (df["income"] + eps)
-    df["CWI"] = ((1 - df["DTI"]).clip(0, 1)) * ((1 - df["LTV"]).clip(0, 1)) * (df["CCR"].clip(0, 3))
-
-    fx = st.session_state["currency_fx"]
-    for c in ("income", "loan_amount", "collateral_value", "assets_owned", "existing_debt"):
-        df[c] = (df[c] * fx).round(2)
-    df["currency_code"] = st.session_state["currency_code"]
-    return dedupe_columns(df)
-
-def to_agent_schema(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Harmonize to the server-side agent’s expected schema.
-    """
-    out = df.copy()
-    n = len(out)
-    if "employment_years" not in out.columns:
-        out["employment_years"] = out.get("employment_length", 0)
-    if "debt_to_income" not in out.columns:
-        if "DTI" in out.columns:
-            out["debt_to_income"] = out["DTI"].astype(float)
-        elif "existing_debt" in out.columns and "income" in out.columns:
-            denom = out["income"].replace(0, np.nan)
-            dti = (out["existing_debt"] / denom).fillna(0.0)
-            out["debt_to_income"] = dti.clip(0, 10)
-        else:
-            out["debt_to_income"] = 0.0
-    rng = np.random.default_rng(12345)
-    if "credit_history_length" not in out.columns:
-        out["credit_history_length"] = rng.integers(0, 30, n)
-    if "num_delinquencies" not in out.columns:
-        out["num_delinquencies"] = np.minimum(rng.poisson(0.2, n), 10)
-    if "requested_amount" not in out.columns:
-        out["requested_amount"] = out.get("loan_amount", 0)
-    if "loan_term_months" not in out.columns:
-        out["loan_term_months"] = out.get("loan_duration_months", 0)
-    return dedupe_columns(out)
-# ────────────────────────────────
-# LAYOUT
-# ────────────────────────────────
-if not st.session_state.logged_in:
-    st.session_state.workflow_stage = "data"
-    stage = st.session_state.public_stage
-
-    if stage == "landing":
-        col1, col2 = st.columns([1.1, 1.9], gap="large")
-
-        with col1:
-            st.markdown("<div class='left-box'>", unsafe_allow_html=True)
-            logo_path = load_image("people_logo")
-            if logo_path:
-                st.image(logo_path, width=160)
-            else:
-                logo_upload = st.file_uploader("Upload People Logo", type=["jpg", "png", "webp"], key="upload_logo")
-                if logo_upload:
-                    save_uploaded_image(logo_upload, "people_logo")
-                    st.success("✅ Logo uploaded successfully! Refreshing...")
-                    st.rerun()
-
-            st.markdown(
-                """
-                <h1>✊ Let’s Build an AI by the People, for the People</h1>
-                <h3>⚙️ Ready-to-Use AI Agent Sandbox — From Sandbox to Production</h3>
-                <p>
-                A world-class open innovation space where anyone can build, test, and deploy AI agents using open-source code, explainable models, and modular templates.<br><br>
-                For developers, startups, and enterprises — experiment, customize, and scale AI without barriers.<br><br>
-                <b>Privacy & Data Sovereignty:</b> Each agent runs under strict privacy controls and complies with GDPR & Vietnam Data Law 2025. Only anonymized or synthetic data is used — your data never leaves your environment.<br><br>
-                <b>From Sandbox to Production:</b> Start with ready-to-use agent templates, adapt, test, and deploy — all on GPU-as-a-Service Cloud with zero CAPEX.<br><br>
-                You dream it — now you can build it.
-                </p>
-                """,
-                unsafe_allow_html=True,
-            )
-
-            if st.button("🚀 Start Building Now", key="btn_start_building"):
-                st.session_state.public_stage = "agents"
-                st.rerun()
-
-            st.markdown("</div>", unsafe_allow_html=True)
-
-        with col2:
-            st.markdown("<div class='right-box'>", unsafe_allow_html=True)
-            st.markdown("<h2>📊 Global AI Agent Library</h2>", unsafe_allow_html=True)
-            st.caption("Explore sectors, industries, and ready-to-use AI agents across domains.")
-
-            rows = []
-            for sector, industry, agent, desc, status, emoji in AGENTS:
-                rating = round(random.uniform(3.5, 5.0), 1)
-                users = random.randint(800, 9000)
-                comments = random.randint(5, 120)
-                image_html = render_image_tag(agent, industry, emoji)
-                rows.append(
-                    {
-                        "🖼️": image_html,
-                        "🏭 Sector": sector,
-                        "🧩 Industry": industry,
-                        "🤖 Agent": agent,
-                        "🧠 Description": desc,
-                        "📶 Status": f'<span class="status-{status.replace(" ", "")}">{status}</span>',
-                        "⭐ Rating": "⭐" * int(rating) + "☆" * (5 - int(rating)),
-                        "👥 Users": users,
-                        "💬 Comments": comments,
-                    }
-                )
-            df = pd.DataFrame(rows)
-            st.write(df.to_html(escape=False, index=False), unsafe_allow_html=True)
-            st.markdown("</div>", unsafe_allow_html=True)
-
-        st.markdown("<footer>Made with ❤️ by Dzoan Nguyen— Open AI Sandbox Initiative</footer>", unsafe_allow_html=True)
-        st.stop()
-
-    if stage == "agents":
-        top_cols = st.columns([1, 4, 1])
-        with top_cols[0]:
-            if st.button("⬅️ Back", key="btn_back_to_landing"):
-                st.session_state.public_stage = "landing"
-                st.rerun()
-        with top_cols[1]:
-            st.title("🤖 Available AI Agents")
-            st.caption("Browse ready-to-launch agents. Click Launch to continue to login.")
-
-        for idx, (sector, industry, agent, desc, status, emoji) in enumerate(AGENTS):
-            row = st.container()
-            with row:
-                cols = st.columns([1.5, 1.5, 2.2, 2.8, 1.2])
-                cols[0].markdown(f"**{sector}**")
-                cols[1].markdown(f"{industry}")
-                cols[2].markdown(f"**{agent}**<br/><span style='color:#94a3b8'>{desc}</span>", unsafe_allow_html=True)
-                cols[3].markdown(
-                    "Status: "
-                    + ("✅ <span style='color:#22c55e'>Available</span>" if status == "Available" else "🕓 <span style='color:#f59e0b'>Coming Soon</span>"),
-                    unsafe_allow_html=True,
-                )
-                if status == "Available":
-                    if cols[4].button("Launch", key=f"launch_{idx}"):
-                        st.session_state.selected_agent = agent
-                        st.session_state.public_stage = "login"
-                        st.rerun()
-                else:
-                    cols[4].button("Coming Soon", key=f"launch_{idx}", disabled=True)
-
-            if idx < len(AGENTS) - 1:
-                st.divider()
-
-        st.markdown("<footer>Made with ❤️ by Dzoan Nguyen— Open AI Sandbox Initiative</footer>", unsafe_allow_html=True)
-        st.stop()
-
-    if stage == "login":
-        agent_label = st.session_state.selected_agent or "AI Agent"
-        top_cols = st.columns([1, 4, 1])
-        with top_cols[0]:
-            if st.button("⬅️ Back to Agents", key="btn_back_to_agents"):
-                st.session_state.public_stage = "agents"
-                st.rerun()
-        with top_cols[1]:
-            st.title(f"🔐 Login to {agent_label}")
-            st.caption("Enter demo credentials to access the workflow.")
-
-        col1, col2, col3 = st.columns([1, 1, 1])
-        with col1:
-            username = st.text_input("Username", value="", placeholder="e.g. dzoan")
-        with col2:
-            email = st.text_input("Email", value="", placeholder="e.g. dzoan@demo.local")
-        with col3:
-            password = st.text_input("Password", type="password", placeholder="Enter any password")
-
-        if st.button("Login", type="primary", use_container_width=True, key="btn_public_login"):
-            if username.strip() and email.strip():
-                st.session_state.user_info.update(
-                    {
-                        "name": username.strip(),
-                        "email": email.strip(),
-                        "flagged": False,
-                        "timestamp": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                    }
-                )
-                st.session_state.workflow_stage = "data"
-                st.session_state["asset_appraisal_result"] = None
-                st.session_state["asset_verified_result"] = None
-                st.session_state["asset_collateral_df"] = None
-                st.session_state["asset_collateral_path"] = ""
-                st.session_state["asset_collateral_credit_path"] = ""
-                st.session_state.logged_in = True
-                st.session_state["login_flash"] = username.strip()
-                st.session_state.public_stage = "landing"
-                st.session_state.selected_agent = None
-            else:
-                st.error("Please enter both username and email to continue.")
-
-        st.markdown("<footer>Made with ❤️ by Dzoan Nguyen— Open AI Sandbox Initiative</footer>", unsafe_allow_html=True)
-        st.stop()
-
-
-# ─────────────────────────────────────────────
-# HEADER — USER INFO + SECURITY
-
-flash_user = st.session_state.pop("login_flash", None)
-if flash_user:
-    st.success(f"✅ Logged in as {flash_user}")
-
-user_name = st.session_state.user_info.get("name", "")
-user_email = st.session_state.user_info.get("email", "")
-flag_session = st.session_state.user_info.get("flagged", False)
-
-workflow_stage = st.session_state.get("workflow_stage", "data")
-
-if workflow_stage == "data":
-    render_pipeline_hero("data")
-
-    st.title("🏦 Synthetic Data Factory")
-    st.caption("Generate localized loan books and prep sanitized datasets for downstream agents.")
-
-    nav_cols = st.columns([1, 1, 2, 1])
-    with nav_cols[0]:
-        if st.button("🏠 Back to Home", key="btn_home_data_stage"):
-            go_to_public_home(clear_user=False)
-            st.rerun()
-    with nav_cols[1]:
-        if st.button("🛂 Continue to KYC Stage", key="btn_to_kyc_stage"):
-            st.session_state.workflow_stage = "kyc"
-            st.rerun()
-    with nav_cols[3]:
-        if st.button("🚪 Logout", key="btn_logout_data_stage"):
-            logout_user()
-            st.rerun()
-
-    st.markdown(f"👤 **User:** {user_name or 'Unknown'} · ✉️ {user_email or '—'}")
-
-    st.subheader("🏦 Synthetic Credit Data Generator")
-
-    c1, c2 = st.columns([1, 2])
-    with c1:
-        code = st.selectbox(
-            "Currency",
-            list(CURRENCY_OPTIONS.keys()),
-            index=list(CURRENCY_OPTIONS.keys()).index(st.session_state["currency_code"]),
-            help="All monetary fields will be in this local currency.",
-        )
-        if code != st.session_state["currency_code"]:
-            st.session_state["currency_code"] = code
-            set_currency_defaults()
-    with c2:
-        st.info(
-            f"Amounts will be generated in **{st.session_state['currency_label']}**.",
-            icon="💰",
-        )
-
-    rows = st.slider("Number of rows to generate", 50, 2000, 200, step=50)
-    non_bank_ratio = st.slider("Share of non-bank customers", 0.0, 1.0, 0.30, 0.05)
-
-    colA, colB = st.columns(2)
-    with colA:
-        if st.button("🔴 Generate RAW Synthetic Data (with PII)", use_container_width=True):
-            raw_df = append_user_info(generate_raw_synthetic(rows, non_bank_ratio))
-            st.session_state.synthetic_raw_df = raw_df
-            raw_path = save_to_runs(raw_df, "synthetic_raw")
-            st.success(
-                f"Generated RAW (PII) dataset with {rows} rows in {st.session_state['currency_label']}. Saved to {raw_path}"
-            )
-            st.dataframe(raw_df.head(10), use_container_width=True)
-            st.download_button(
-                "⬇️ Download RAW CSV",
-                raw_df.to_csv(index=False).encode("utf-8"),
-                os.path.basename(raw_path),
-                "text/csv",
-            )
-
-    with colB:
-        if st.button("🟢 Generate ANON Synthetic Data (ready for agent)", use_container_width=True):
-            anon_df = append_user_info(generate_anon_synthetic(rows, non_bank_ratio))
-            st.session_state.synthetic_df = anon_df
-            anon_path = save_to_runs(anon_df, "synthetic_anon")
-            st.success(
-                f"Generated ANON dataset with {rows} rows in {st.session_state['currency_label']}. Saved to {anon_path}"
-            )
-            st.dataframe(anon_df.head(10), use_container_width=True)
-            st.download_button(
-                "⬇️ Download ANON CSV",
-                anon_df.to_csv(index=False).encode("utf-8"),
-                os.path.basename(anon_path),
-                "text/csv",
-            )
-
-    st.markdown("---")
-    st.subheader("🧹 Upload & Anonymize Customer Data")
-    st.markdown("Upload your **real CSV**. We drop PII columns and scrub emails/phones in text fields.")
-
-    uploaded = st.file_uploader("Upload CSV file", type=["csv"], key="data_stage_uploader")
-    if uploaded:
-        try:
-            df = pd.read_csv(uploaded)
-        except Exception as exc:
-            st.error(f"Could not read CSV: {exc}")
-            st.stop()
-
-        st.write("📊 Original Data Preview:")
-        st.dataframe(dedupe_columns(df.head(5)), use_container_width=True)
-
-        sanitized, dropped_cols = drop_pii_columns(df)
-        sanitized = append_user_info(sanitized)
-        sanitized = dedupe_columns(sanitized)
-        st.session_state.anonymized_df = sanitized
-
-        st.success(f"Dropped PII columns: {sorted(dropped_cols) if dropped_cols else 'None'}")
-        st.write("✅ Sanitized Data Preview:")
-        st.dataframe(sanitized.head(5), use_container_width=True)
-
-        fpath = save_to_runs(sanitized, "anonymized")
-        st.success(f"Saved anonymized file: {fpath}")
-        st.download_button(
-            "⬇️ Download Clean Data",
-            sanitized.to_csv(index=False).encode("utf-8"),
-            os.path.basename(fpath),
-            "text/csv",
-        )
-    else:
-        st.info("Choose a CSV to see the sanitize flow.", icon="ℹ️")
 
     st.stop()
 
@@ -2466,3 +1835,800 @@ if workflow_stage == "training":
     st.stop()
 
 
+# ─────────────────────────────────────────────
+# GLOBAL UTILS
+
+BANNED_NAMES = {"race", "gender", "religion", "ethnicity", "ssn", "national_id"}
+PII_COLS = {"customer_name", "name", "email", "phone", "address", "ssn", "national_id", "dob"}
+
+EMAIL_RE = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
+PHONE_RE = re.compile(r"\+?\d[\d\-\s]{6,}\d")
+
+def dedupe_columns(df: pd.DataFrame) -> pd.DataFrame:
+    return df.loc[:, ~df.columns.duplicated(keep="last")]
+
+def scrub_text_pii(s):
+    if not isinstance(s, str):
+        return s
+    s = EMAIL_RE.sub("", s)
+    s = PHONE_RE.sub("", s)
+    return s.strip()
+
+def drop_pii_columns(df: pd.DataFrame):
+    original_cols = list(df.columns)
+    keep_cols = [c for c in original_cols if all(k not in c.lower() for k in PII_COLS)]
+    dropped = [c for c in original_cols if c not in keep_cols]
+    out = df[keep_cols].copy()
+    for c in out.select_dtypes(include="object"):
+        out[c] = out[c].apply(scrub_text_pii)
+    return dedupe_columns(out), dropped
+
+def strip_policy_banned(df: pd.DataFrame) -> pd.DataFrame:
+    keep = []
+    for c in df.columns:
+        cl = c.lower()
+        if cl in BANNED_NAMES:
+            continue
+        keep.append(c)
+    return df[keep]
+
+def ensure_application_ids(df: pd.DataFrame) -> pd.DataFrame:
+    out = df.copy()
+    if "application_id" not in out.columns:
+        out["application_id"] = [f"APP_{i:04d}" for i in range(1, len(out) + 1)]
+    out["application_id"] = out["application_id"].astype(str)
+    return out
+
+def sanitize_dataset(df: pd.DataFrame) -> pd.DataFrame:
+    safe = dedupe_columns(df)
+    safe, _ = drop_pii_columns(safe)
+    safe = strip_policy_banned(safe)
+    safe = dedupe_columns(safe)
+    return ensure_application_ids(safe)
+
+def resolve_dataset_choice(choice: str, *, sanitize: bool = True) -> Optional[pd.DataFrame]:
+    df: Optional[pd.DataFrame] = None
+    if choice == "Use synthetic (ANON)":
+        df = st.session_state.get("synthetic_df")
+    elif choice == "Use synthetic (RAW – auto-sanitize)":
+        df = st.session_state.get("synthetic_raw_df")
+    elif choice == "Use anonymized dataset":
+        df = st.session_state.get("anonymized_df")
+    elif choice == "Use collateral verification output":
+        df = st.session_state.get("asset_verified_result") or st.session_state.get("asset_collateral_df")
+    elif choice == "Use KYC registry (anonymized)":
+        df = st.session_state.get("kyc_registry_ready")
+    elif choice == "Upload manually":
+        up_bytes = st.session_state.get("manual_upload_bytes")
+        if up_bytes:
+            try:
+                df = pd.read_csv(io.BytesIO(up_bytes))
+            except Exception:
+                df = None
+
+    if df is None:
+        return None
+
+    df = dedupe_columns(df)
+    if sanitize:
+        try:
+            df = sanitize_dataset(df)
+        except Exception:
+            df = ensure_application_ids(df)
+    else:
+        df = ensure_application_ids(df)
+    return df
+
+def build_collateral_report(
+    df: pd.DataFrame,
+    *,
+    confidence_threshold: float = 0.88,
+    value_ratio: float = 0.8,
+) -> tuple[pd.DataFrame, List[str]]:
+    if df is None or df.empty:
+        return pd.DataFrame(), []
+
+    records = df.to_dict(orient="records")
+    total = len(records)
+    progress = st.progress(0.0) if total > 1 else None
+    session = requests.Session()
+    rows: List[Dict[str, Any]] = []
+    errors: List[str] = []
+
+    for idx, record in enumerate(records, start=1):
+        asset_type = str(record.get("collateral_type") or "Collateral Asset")
+        declared_value = _to_float(record.get("collateral_value"), 0.0)
+        loan_amount = _to_float(record.get("loan_amount"), 0.0)
+        metadata = {
+            "application_id": record.get("application_id"),
+            "declared_value": declared_value,
+            "loan_amount": loan_amount,
+            "currency_code": record.get("currency_code") or st.session_state.get("currency_code"),
+        }
+
+        payload = {"asset_type": asset_type, "metadata": json.dumps(metadata, default=str)}
+
+        estimated_value = declared_value
+        confidence = 0.0
+        asset_result: Dict[str, Any] = {}
+        error_message = ""
+
+        try:
+            response = session.post(
+                f"{API_URL}/v1/agents/asset_appraisal/run",
+                data=payload,
+                timeout=30,
+            )
+            response.raise_for_status()
+            asset_result = response.json().get("result", {}) or {}
+            estimated_value = _to_float(asset_result.get("estimated_value"), declared_value)
+            confidence = _to_float(asset_result.get("confidence"), 0.0)
+        except Exception as exc:  # pragma: no cover - defensive
+            error_message = str(exc)
+            errors.append(error_message)
+
+        value_threshold = 0.0
+        if loan_amount:
+            value_threshold = loan_amount * value_ratio
+        elif declared_value:
+            value_threshold = declared_value * value_ratio
+
+        reasons: List[str] = []
+        meets_confidence = confidence >= confidence_threshold
+        meets_value = True if value_threshold == 0 else estimated_value >= value_threshold
+
+        if not meets_confidence:
+            reasons.append(
+                f"Confidence {confidence:.2f} below threshold {confidence_threshold:.2f}"
+            )
+        if not meets_value:
+            if loan_amount:
+                reasons.append(
+                    f"Estimated value {estimated_value:,.0f} below {value_ratio:.0%} of loan {loan_amount:,.0f}"
+                )
+            else:
+                reasons.append(
+                    f"Estimated value {estimated_value:,.0f} below threshold {value_threshold:,.0f}"
+                )
+        if error_message:
+            reasons.append(f"Asset agent error: {error_message}")
+        if not reasons:
+            reasons.append("Confidence and value thresholds satisfied")
+
+        verified = meets_confidence and meets_value and not error_message
+        status_label = "Verified" if verified else "Failed"
+
+        enriched = dict(record)
+        enriched.update(
+            {
+                "collateral_estimated_value": round(estimated_value, 2),
+                "collateral_confidence": round(confidence, 4),
+                "collateral_verified": bool(verified),
+                "collateral_status": status_label,
+                "collateral_verification_reason": "; ".join(reasons),
+                "collateral_agent_asset_id": asset_result.get("asset_id"),
+                "collateral_agent_model": asset_result.get("model_name"),
+                "collateral_agent_timestamp": asset_result.get("timestamp"),
+                "collateral_value_threshold": round(value_threshold, 2),
+                "collateral_checked_at": datetime.datetime.utcnow().isoformat(),
+            }
+        )
+        rows.append(enriched)
+
+        if progress is not None:
+            progress.progress(idx / total)
+
+    if progress is not None:
+        progress.empty()
+
+    return dedupe_columns(pd.DataFrame(rows)), errors
+
+def append_user_info(df: pd.DataFrame) -> pd.DataFrame:
+    if "user_info" not in st.session_state:
+        st.session_state.user_info = {}
+    meta = st.session_state.user_info
+    timestamp = meta.get("timestamp") or datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    meta["timestamp"] = timestamp
+
+    out = df.copy()
+    out["session_user_name"] = meta.get("name", "")
+    out["session_user_email"] = meta.get("email", "")
+    out["session_flagged"] = meta.get("flagged", False)
+    out["created_at"] = timestamp
+    return dedupe_columns(out)
+
+def save_to_runs(df: pd.DataFrame, prefix: str) -> str:
+    ts = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M")
+    flagged = bool(st.session_state.get("user_info", {}).get("flagged", False))
+    flag_suffix = "_FLAGGED" if flagged else ""
+    fname = f"{prefix}_{ts}{flag_suffix}.csv"
+    fpath = os.path.join(RUNS_DIR, fname)
+    dedupe_columns(df).to_csv(fpath, index=False)
+    return fpath
+
+def try_json(x):
+    if isinstance(x, (dict, list)):
+        return x
+    if not isinstance(x, str):
+        return None
+    try:
+        return json.loads(x)
+    except Exception:
+        return None
+
+def _safe_json(x):
+    if isinstance(x, dict):
+        return x
+    if isinstance(x, str) and x.strip():
+        try:
+            return json.loads(x)
+        except Exception:
+            return {}
+    return {}
+
+def _to_float(value: Any, default: float = 0.0) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+def fmt_currency_label(base: str) -> str:
+    sym = st.session_state.get("currency_symbol", "")
+    return f"{base} ({sym})" if sym else base
+
+# ─────────────────────────────────────────────
+# CURRENCY CATALOG
+
+CURRENCY_OPTIONS = {
+    # code: (label, symbol, fx to apply on USD-like base generated numbers)
+    "USD": ("USD $", "$", 1.0),
+    "EUR": ("EUR €", "€", 0.93),
+    "GBP": ("GBP £", "£", 0.80),
+    "JPY": ("JPY ¥", "¥", 150.0),
+    "VND": ("VND ₫", "₫", 24000.0),
+}
+
+def set_currency_defaults():
+    if "currency_code" not in st.session_state:
+        st.session_state["currency_code"] = "USD"
+    label, symbol, fx = CURRENCY_OPTIONS[st.session_state["currency_code"]]
+    st.session_state["currency_label"] = label
+    st.session_state["currency_symbol"] = symbol
+    st.session_state["currency_fx"] = fx
+
+set_currency_defaults()
+
+# ─────────────────────────────────────────────
+# DASHBOARD HELPERS (Plotly, dark theme)
+
+def _kpi_card(label: str, value: str, sublabel: str | None = None):
+    st.markdown(
+        f"""
+        <div style="background:#0e1117;border:1px solid #2a2f3e;border-radius:12px;padding:14px 16px;margin-bottom:10px;">
+          <div style="font-size:12px;color:#9aa4b2;text-transform:uppercase;letter-spacing:.06em;">{label}</div>
+          <div style="font-size:28px;font-weight:700;color:#e6edf3;line-height:1.1;margin-top:2px;">{value}</div>
+          {f'<div style="font-size:12px;color:#9aa4b2;margin-top:6px;">{sublabel}</div>' if sublabel else ''}
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+def render_credit_dashboard(df: pd.DataFrame, currency_symbol: str = ""):
+    """
+    Renders the whole dashboard (TOP-10s → Opportunities → KPIs & pies/bars → Mix table).
+    Keeps decision filter in the table only.
+    """
+    if df is None or df.empty:
+        st.info("No data to visualize yet.")
+        return
+
+    cols = df.columns
+
+    # ─────────────── TOP 10s FIRST ───────────────
+    st.markdown("## 🔝 Top 10 Snapshot")
+
+    # Top 10 loans approved
+    if {"decision", "loan_amount", "application_id"} <= set(cols):
+        top_approved = df[df["decision"].astype(str).str.lower() == "approved"].copy()
+        if not top_approved.empty:
+            top_approved = top_approved.sort_values("loan_amount", ascending=False).head(10)
+            fig = px.bar(
+                top_approved,
+                x="loan_amount",
+                y="application_id",
+                orientation="h",
+                title="Top 10 Approved Loans",
+                labels={"loan_amount": f"Loan Amount {currency_symbol}", "application_id": "Application"},
+            )
+            fig.update_layout(margin=dict(l=10, r=10, t=50, b=10), height=420, template="plotly_dark")
+            st.plotly_chart(fig, use_container_width=True)
+        else:
+            st.info("No approved loans available to show top 10.")
+
+    # Top 10 collateral types by average value
+    if {"collateral_type", "collateral_value"} <= set(cols):
+        cprof = df.groupby("collateral_type", dropna=False).agg(
+            avg_value=("collateral_value", "mean"),
+            cnt=("collateral_type", "count")
+        ).reset_index()
+        if not cprof.empty:
+            cprof = cprof.sort_values("avg_value", ascending=False).head(10)
+            fig = px.bar(
+                cprof,
+                x="avg_value",
+                y="collateral_type",
+                orientation="h",
+                title="Top 10 Collateral Types (Avg Value)",
+                labels={"avg_value": f"Avg Value {currency_symbol}", "collateral_type": "Collateral Type"},
+                hover_data=["cnt"]
+            )
+            fig.update_layout(margin=dict(l=10, r=10, t=50, b=10), height=420, template="plotly_dark")
+            st.plotly_chart(fig, use_container_width=True)
+
+    # Top 10 reasons for denial (from rule_reasons False flags)
+    if "rule_reasons" in cols and "decision" in cols:
+        denied = df[df["decision"].astype(str).str.lower() == "denied"].copy()
+        reasons_count = {}
+        for _, r in denied.iterrows():
+            rr = _safe_json(r.get("rule_reasons"))
+            if isinstance(rr, dict):
+                for k, v in rr.items():
+                    if v is False:
+                        reasons_count[k] = reasons_count.get(k, 0) + 1
+        if reasons_count:
+            items = pd.DataFrame(sorted(reasons_count.items(), key=lambda x: x[1], reverse=True),
+                                 columns=["reason", "count"]).head(10)
+            fig = px.bar(
+                items, x="count", y="reason", orientation="h",
+                title="Top 10 Reasons for Denial",
+                labels={"count": "Count", "reason": "Rule"},
+            )
+            fig.update_layout(margin=dict(l=10, r=10, t=50, b=10), height=420, template="plotly_dark")
+            st.plotly_chart(fig, use_container_width=True)
+        else:
+            st.info("No denial reasons detected.")
+
+    # Top 10 loan officer performance (approval rate) if officer column present
+    officer_col = None
+    for guess in ("loan_officer", "officer", "reviewed_by", "session_user_name"):
+        if guess in cols:
+            officer_col = guess
+            break
+    if officer_col and "decision" in cols:
+        perf = (
+            df.assign(is_approved=(df["decision"].astype(str).str.lower() == "approved").astype(int))
+              .groupby(officer_col, dropna=False)["is_approved"]
+              .agg(approved_rate="mean", n="count")
+              .reset_index()
+        )
+        if not perf.empty:
+            perf["approved_rate_pct"] = (perf["approved_rate"] * 100).round(1)
+            perf = perf.sort_values(["approved_rate_pct", "n"], ascending=[False, False]).head(10)
+            fig = px.bar(
+                perf, x="approved_rate_pct", y=officer_col, orientation="h",
+                title="Top 10 Loan Officer Approval Rate (this batch)",
+                labels={"approved_rate_pct": "Approval Rate (%)", officer_col: "Officer"},
+                hover_data=["n"]
+            )
+            fig.update_layout(margin=dict(l=10, r=10, t=50, b=10), height=420, template="plotly_dark")
+            st.plotly_chart(fig, use_container_width=True)
+
+    st.markdown("---")
+
+    # ─────────────── OPPORTUNITIES ───────────────
+    st.markdown("## 💡 Opportunities")
+
+    # Short-term loan opportunities (simple heuristic)
+    opp_rows = []
+    if {"income", "loan_amount"}.issubset(cols):
+        term_col = "loan_term_months" if "loan_term_months" in cols else ("loan_duration_months" if "loan_duration_months" in cols else None)
+        if term_col:
+            for _, r in df.iterrows():
+                inc = float(r.get("income", 0) or 0)
+                amt = float(r.get("loan_amount", 0) or 0)
+                term = int(r.get(term_col, 0) or 0)
+                dti = float(r.get("DTI", 0) or 0)
+                if (term >= 36) and (amt <= inc * 0.8) and (dti <= 0.45):
+                    opp_rows.append({
+                        "application_id": r.get("application_id"),
+                        "suggested_term": 24,
+                        "loan_amount": amt,
+                        "income": inc,
+                        "DTI": dti,
+                        "note": "Candidate for short-term plan (<=24m) based on affordability."
+                    })
+    if opp_rows:
+        st.markdown("#### 📎 Short-Term Loan Candidates")
+        st.dataframe(pd.DataFrame(opp_rows).head(25), use_container_width=True, height=320)
+    else:
+        st.info("No short-term loan candidates identified in this batch.")
+
+    st.markdown("#### 🔁 Buyback / Consolidation Beneficiaries")
+    candidates = []
+    need = {"decision", "existing_debt", "loan_amount", "DTI"}
+    if need <= set(cols):
+        for _, r in df.iterrows():
+            dec = str(r.get("decision", "")).lower()
+            debt = float(r.get("existing_debt", 0) or 0)
+            loan = float(r.get("loan_amount", 0) or 0)
+            dti = float(r.get("DTI", 0) or 0)
+            proposal = _safe_json(r.get("proposed_consolidation_loan", {}))
+            has_bb = bool(proposal)
+
+            if dec == "denied" or dti > 0.45 or debt > loan:
+                benefit_score = round((debt / (loan + 1e-6)) * 0.4 + dti * 0.6, 2)
+                candidates.append({
+                    "application_id": r.get("application_id"),
+                    "customer_type": r.get("customer_type"),
+                    "existing_debt": debt,
+                    "loan_amount": loan,
+                    "DTI": dti,
+                    "collateral_type": r.get("collateral_type"),
+                    "buyback_proposed": has_bb,
+                    "buyback_amount": proposal.get("buyback_amount") if has_bb else None,
+                    "benefit_score": benefit_score,
+                    "note": proposal.get("note") if has_bb else None
+                })
+    if candidates:
+        cand_df = pd.DataFrame(candidates).sort_values("benefit_score", ascending=False)
+        st.dataframe(cand_df.head(25), use_container_width=True, height=380)
+    else:
+        st.info("No additional buyback beneficiaries identified.")
+
+    st.markdown("---")
+
+    # ─────────────── PORTFOLIO KPIs ───────────────
+    st.markdown("## 📈 Portfolio Snapshot")
+    c1, c2, c3, c4 = st.columns(4)
+
+    # Approval rate
+    if "decision" in cols:
+        total = len(df)
+        approved = int((df["decision"].astype(str).str.lower() == "approved").sum())
+        rate = (approved / total * 100) if total else 0.0
+        with c1: _kpi_card("Approval Rate", f"{rate:.1f}%", f"{approved} of {total}")
+
+    # Avg approved loan amount
+    if {"decision", "loan_amount"} <= set(cols):
+        ap = df[df["decision"].astype(str).str.lower() == "approved"]["loan_amount"]
+        avg_amt = ap.mean() if len(ap) else 0.0
+        with c2: _kpi_card("Avg Approved Amount", f"{currency_symbol}{avg_amt:,.0f}")
+
+    # Decision time (if present)
+    if {"created_at", "decision_at"} <= set(cols):
+        try:
+            t = (pd.to_datetime(df["decision_at"]) - pd.to_datetime(df["created_at"])).dt.total_seconds() / 60.0
+            avg_min = float(t.mean())
+            with c3: _kpi_card("Avg Decision Time", f"{avg_min:.1f} min")
+        except Exception:
+            with c3: _kpi_card("Avg Decision Time", "—")
+
+    # Non-bank share
+    if "customer_type" in cols:
+        nb = int((df["customer_type"].astype(str).str.lower() == "non-bank").sum())
+        total = len(df)
+        share = (nb / total * 100) if total else 0.0
+        with c4: _kpi_card("Non-bank Share", f"{share:.1f}%", f"{nb} of {total}")
+
+    # ─────────────── COMPOSITION & RISK ───────────────
+    st.markdown("## 🧭 Composition & Risk")
+
+    # Approval vs Denial (pie)
+    if "decision" in cols:
+        pie_df = df["decision"].value_counts().rename_axis("Decision").reset_index(name="Count")
+        fig = px.pie(pie_df, names="Decision", values="Count", title="Decision Mix")
+        fig.update_layout(margin=dict(l=10, r=10, t=60, b=10), height=360, template="plotly_dark")
+        st.plotly_chart(fig, use_container_width=True)
+
+    # Avg DTI / LTV by decision (grouped bars)
+    have_dti = "DTI" in cols
+    have_ltv = "LTV" in cols
+    if "decision" in cols and (have_dti or have_ltv):
+        agg_map = {}
+        if have_dti: agg_map["avg_DTI"] = ("DTI", "mean")
+        if have_ltv: agg_map["avg_LTV"] = ("LTV", "mean")
+        grp = df.groupby("decision").agg(**agg_map).reset_index()
+        melted = grp.melt(id_vars=["decision"], var_name="metric", value_name="value")
+        fig = px.bar(melted, x="decision", y="value", color="metric",
+                     barmode="group", title="Average DTI / LTV by Decision")
+        fig.update_layout(margin=dict(l=10, r=10, t=60, b=10), height=360, template="plotly_dark")
+        st.plotly_chart(fig, use_container_width=True)
+
+    # Loan term mix (stacked)
+    term_col = "loan_term_months" if "loan_term_months" in cols else ("loan_duration_months" if "loan_duration_months" in cols else None)
+    if term_col and "decision" in cols:
+        mix = df.groupby([term_col, "decision"]).size().reset_index(name="count")
+        fig = px.bar(
+            mix, x=term_col, y="count", color="decision", title="Loan Term Mix",
+            labels={term_col: "Term (months)", "count": "Count"}, barmode="stack"
+        )
+        fig.update_layout(margin=dict(l=10, r=10, t=60, b=10), height=360, template="plotly_dark")
+        st.plotly_chart(fig, use_container_width=True)
+
+    # Collateral avg value by type (bar)
+    if {"collateral_type", "collateral_value"} <= set(cols):
+        cprof = df.groupby("collateral_type").agg(
+            avg_col=("collateral_value", "mean"),
+            cnt=("collateral_type", "count")
+        ).reset_index()
+        fig = px.bar(
+            cprof.sort_values("avg_col", ascending=False),
+            x="collateral_type", y="avg_col",
+            title=f"Avg Collateral Value by Type ({currency_symbol})",
+            hover_data=["cnt"]
+        )
+        fig.update_layout(margin=dict(l=10, r=10, t=60, b=10), height=360, template="plotly_dark")
+        st.plotly_chart(fig, use_container_width=True)
+
+    # Top proposed plans (horizontal bar)
+    if "proposed_loan_option" in cols:
+        plans = df["proposed_loan_option"].dropna().astype(str)
+        if len(plans) > 0:
+            plan_types = []
+            for s in plans:
+                p = _safe_json(s)
+                plan_types.append(p.get("type") if isinstance(p, dict) and "type" in p else s)
+            plan_df = pd.Series(plan_types).value_counts().head(10).rename_axis("plan").reset_index(name="count")
+            fig = px.bar(
+                plan_df, x="count", y="plan", orientation="h",
+                title="Top 10 Proposed Plans"
+            )
+            fig.update_layout(margin=dict(l=10, r=10, t=60, b=10), height=360, template="plotly_dark")
+            st.plotly_chart(fig, use_container_width=True)
+
+    # Customer mix table (bank vs non-bank)
+    if "customer_type" in cols:
+        mix = df["customer_type"].value_counts().rename_axis("Customer Type").reset_index(name="Count")
+        mix["Ratio"] = (mix["Count"] / mix["Count"].sum()).round(3)
+        st.markdown("### 👥 Customer Mix")
+        st.dataframe(mix, use_container_width=True, height=220)
+# ─────────────────────────────────────────────
+# DATA GENERATORS
+
+
+def _rng_choice(rng: np.random.Generator, items: List[Any], *, weights: Optional[List[float]] = None) -> Any:
+    if weights is not None:
+        return rng.choice(items, p=np.array(weights) / np.sum(weights))
+    return rng.choice(items)
+
+
+def generate_kyc_registry(base_df: Optional[pd.DataFrame], size: int = 8) -> pd.DataFrame:
+    rng = np.random.default_rng()
+    base = ensure_application_ids(base_df) if isinstance(base_df, pd.DataFrame) and not base_df.empty else None
+    if base is not None:
+        replace = len(base) < size
+        sample = base.sample(n=size, replace=replace, random_state=int(rng.integers(0, 1_000_000)))
+        sample = sample.reset_index(drop=True)
+    else:
+        sample = pd.DataFrame()
+
+    names = [
+        "Alice Nguyen",
+        "Bao Tran",
+        "Caroline Pham",
+        "Daniel Ho",
+        "Emma Vu",
+        "Felix Lam",
+        "Gia Le",
+        "Huy Do",
+        "Isabella Dang",
+        "Julian Khang",
+    ]
+    countries = [
+        "Vietnam",
+        "Singapore",
+        "United States",
+        "United Kingdom",
+        "France",
+        "Germany",
+        "Canada",
+        "Australia",
+        "Japan",
+        "South Korea",
+    ]
+    owners = ["Alex Ho", "Mia Tran", "Duy Pham", "Laura Chen", "Oliver Nguyen"]
+    pep_outcomes = ["No match", "Possible match", "Confirmed"]
+    aml_risks = ["Low", "Medium", "High", "Critical"]
+    aml_weights = [0.58, 0.26, 0.12, 0.04]
+    kyc_statuses = ["Cleared", "Pending Docs", "Enhanced Due Diligence"]
+    doc_statuses = ["Validated", "Expired", "Re-requested"]
+
+    today = datetime.datetime.now()
+    records: List[Dict[str, Any]] = []
+    for idx in range(size):
+        base_row = sample.iloc[idx] if not sample.empty else {}
+        application_id = str(base_row.get("application_id", f"APP_{idx+1:04d}"))
+        full_name = base_row.get("customer_name") or base_row.get("name") or rng.choice(names)
+        alias = f"Client-{application_id[-4:]}"
+        country = base_row.get("country") or _rng_choice(rng, countries)
+
+        aml_risk = _rng_choice(rng, aml_risks, weights=aml_weights)
+        pep_status = _rng_choice(rng, pep_outcomes, weights=[0.78, 0.17, 0.05])
+        kyc_state = _rng_choice(rng, kyc_statuses, weights=[0.64, 0.23, 0.13])
+        doc_state = _rng_choice(rng, doc_statuses, weights=[0.72, 0.18, 0.10])
+
+        watch_hits = int(rng.integers(0, 2))
+        if aml_risk in {"High", "Critical"}:
+            watch_hits = int(rng.integers(1, 4))
+        elif pep_status != "No match":
+            watch_hits = int(rng.integers(1, 3))
+
+        last_review = today - datetime.timedelta(days=int(rng.integers(2, 90)))
+        next_refresh = last_review + datetime.timedelta(days=int(rng.integers(45, 150)))
+
+        compliance_notes = {
+            "Cleared": "Standard KYC completed. Continuous transaction monitoring in place.",
+            "Pending Docs": "Awaiting updated proof of income and national ID renewal.",
+            "Enhanced Due Diligence": "High exposure market. Manual review scheduled with compliance officer.",
+        }[kyc_state]
+
+        records.append(
+            {
+                "kyc_reference": f"KYC-{today.strftime('%y%m')}-{idx+1:03d}",
+                "application_id": application_id,
+                "customer_name": full_name,
+                "customer_alias": alias,
+                "country": country,
+                "aml_risk": aml_risk,
+                "pep_status": pep_status,
+                "kyc_status": kyc_state,
+                "document_status": doc_state,
+                "document_score": round(float(rng.uniform(72.0, 98.0)), 1),
+                "watchlist_hits": watch_hits,
+                "kyc_owner": _rng_choice(rng, owners),
+                "kyc_last_reviewed": last_review.strftime("%Y-%m-%d"),
+                "next_refresh_due": next_refresh.strftime("%Y-%m-%d"),
+                "compliance_notes": compliance_notes,
+            }
+        )
+
+    df = pd.DataFrame(records)
+    return dedupe_columns(df)
+
+
+def build_session_kyc_registry(force: bool = False) -> Optional[pd.DataFrame]:
+    existing = st.session_state.get("kyc_registry")
+    if not force and isinstance(existing, pd.DataFrame) and not existing.empty:
+        return existing
+
+    base_candidate = (
+        st.session_state.get("synthetic_raw_df")
+        or st.session_state.get("synthetic_df")
+        or st.session_state.get("anonymized_df")
+    )
+
+    generated_at = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    kyc_df = generate_kyc_registry(base_candidate, size=8)
+    st.session_state["kyc_registry"] = kyc_df
+    st.session_state["kyc_registry_generated_at"] = generated_at
+
+    try:
+        ready = sanitize_dataset(kyc_df)
+    except Exception:
+        ready = ensure_application_ids(kyc_df)
+
+    st.session_state["kyc_registry_ready"] = ready
+
+    try:
+        raw_path = save_to_runs(append_user_info(kyc_df), "kyc_registry")
+        st.session_state["kyc_registry_path"] = raw_path
+    except Exception:  # pragma: no cover - filesystem access
+        st.session_state["kyc_registry_path"] = ""
+
+    try:
+        ready_path = save_to_runs(append_user_info(ready), "kyc_registry_anonymized")
+        st.session_state["kyc_registry_ready_path"] = ready_path
+    except Exception:  # pragma: no cover - filesystem access
+        st.session_state["kyc_registry_ready_path"] = ""
+
+    return kyc_df
+
+
+def generate_raw_synthetic(n: int, non_bank_ratio: float) -> pd.DataFrame:
+    rng = np.random.default_rng(42)
+    names = ["Alice Nguyen","Bao Tran","Chris Do","Duy Le","Emma Tran",
+             "Felix Nguyen","Giang Ho","Hanh Vo","Ivan Pham","Julia Ngo"]
+    emails = [f"{n.split()[0].lower()}.{n.split()[1].lower()}@gmail.com" for n in names]
+    addrs = [
+        "23 Elm St, Boston, MA","19 Pine Ave, San Jose, CA","14 High St, London, UK",
+        "55 Nguyen Hue, Ho Chi Minh","78 Oak St, Chicago, IL","10 Broadway, New York, NY",
+        "8 Rue Lafayette, Paris, FR","21 Königstr, Berlin, DE","44 Maple Dr, Los Angeles, CA","22 Bay St, Toronto, CA"
+    ]
+    is_non = rng.random(n) < non_bank_ratio
+    cust_type = np.where(is_non, "non-bank", "bank")
+
+    df = pd.DataFrame({
+        "application_id": [f"APP_{i:04d}" for i in range(1, n + 1)],
+        "customer_name": np.random.choice(names, n),
+        "email": np.random.choice(emails, n),
+        "phone": [f"+1-202-555-{1000+i:04d}" for i in range(n)],
+        "address": np.random.choice(addrs, n),
+        "national_id": rng.integers(10_000_000, 99_999_999, n),
+        "age": rng.integers(21, 65, n),
+        "income": rng.integers(25_000, 150_000, n),
+        "employment_length": rng.integers(0, 30, n),
+        "loan_amount": rng.integers(5_000, 100_000, n),
+        "loan_duration_months": rng.choice([12, 24, 36, 48, 60, 72], n),
+        "collateral_value": rng.integers(8_000, 200_000, n),
+        "collateral_type": rng.choice(["real_estate","car","land","deposit"], n),
+        "co_loaners": rng.choice([0,1,2], n, p=[0.7, 0.25, 0.05]),
+        "credit_score": rng.integers(300, 850, n),
+        "existing_debt": rng.integers(0, 50_000, n),
+        "assets_owned": rng.integers(10_000, 300_000, n),
+        "current_loans": rng.integers(0, 5, n),
+        "customer_type": cust_type,
+    })
+    eps = 1e-9
+    df["DTI"] = df["existing_debt"] / (df["income"] + eps)
+    df["LTV"] = df["loan_amount"] / (df["collateral_value"] + eps)
+    df["CCR"] = df["collateral_value"] / (df["loan_amount"] + eps)
+    df["ITI"] = (df["loan_amount"] / (df["loan_duration_months"] + eps)) / (df["income"] + eps)
+    df["CWI"] = ((1 - df["DTI"]).clip(0, 1)) * ((1 - df["LTV"]).clip(0, 1)) * (df["CCR"].clip(0, 3))
+
+    fx = st.session_state["currency_fx"]
+    for c in ("income", "loan_amount", "collateral_value", "assets_owned", "existing_debt"):
+        df[c] = (df[c] * fx).round(2)
+    df["currency_code"] = st.session_state["currency_code"]
+    return dedupe_columns(df)
+
+def generate_anon_synthetic(n: int, non_bank_ratio: float) -> pd.DataFrame:
+    rng = np.random.default_rng(42)
+    is_non = rng.random(n) < non_bank_ratio
+    cust_type = np.where(is_non, "non-bank", "bank")
+
+    df = pd.DataFrame({
+        "application_id": [f"APP_{i:04d}" for i in range(1, n + 1)],
+        "age": rng.integers(21, 65, n),
+        "income": rng.integers(25_000, 150_000, n),
+        "employment_length": rng.integers(0, 30, n),
+        "loan_amount": rng.integers(5_000, 100_000, n),
+        "loan_duration_months": rng.choice([12, 24, 36, 48, 60, 72], n),
+        "collateral_value": rng.integers(8_000, 200_000, n),
+        "collateral_type": rng.choice(["real_estate","car","land","deposit"], n),
+        "co_loaners": rng.choice([0,1,2], n, p=[0.7, 0.25, 0.05]),
+        "credit_score": rng.integers(300, 850, n),
+        "existing_debt": rng.integers(0, 50_000, n),
+        "assets_owned": rng.integers(10_000, 300_000, n),
+        "current_loans": rng.integers(0, 5, n),
+        "customer_type": cust_type,
+    })
+    eps = 1e-9
+    df["DTI"] = df["existing_debt"] / (df["income"] + eps)
+    df["LTV"] = df["loan_amount"] / (df["collateral_value"] + eps)
+    df["CCR"] = df["collateral_value"] / (df["loan_amount"] + eps)
+    df["ITI"] = (df["loan_amount"] / (df["loan_duration_months"] + eps)) / (df["income"] + eps)
+    df["CWI"] = ((1 - df["DTI"]).clip(0, 1)) * ((1 - df["LTV"]).clip(0, 1)) * (df["CCR"].clip(0, 3))
+
+    fx = st.session_state["currency_fx"]
+    for c in ("income", "loan_amount", "collateral_value", "assets_owned", "existing_debt"):
+        df[c] = (df[c] * fx).round(2)
+    df["currency_code"] = st.session_state["currency_code"]
+    return dedupe_columns(df)
+
+def to_agent_schema(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Harmonize to the server-side agent’s expected schema.
+    """
+    out = df.copy()
+    n = len(out)
+    if "employment_years" not in out.columns:
+        out["employment_years"] = out.get("employment_length", 0)
+    if "debt_to_income" not in out.columns:
+        if "DTI" in out.columns:
+            out["debt_to_income"] = out["DTI"].astype(float)
+        elif "existing_debt" in out.columns and "income" in out.columns:
+            denom = out["income"].replace(0, np.nan)
+            dti = (out["existing_debt"] / denom).fillna(0.0)
+            out["debt_to_income"] = dti.clip(0, 10)
+        else:
+            out["debt_to_income"] = 0.0
+    rng = np.random.default_rng(12345)
+    if "credit_history_length" not in out.columns:
+        out["credit_history_length"] = rng.integers(0, 30, n)
+    if "num_delinquencies" not in out.columns:
+        out["num_delinquencies"] = np.minimum(rng.poisson(0.2, n), 10)
+    if "requested_amount" not in out.columns:
+        out["requested_amount"] = out.get("loan_amount", 0)
+    if "loan_term_months" not in out.columns:
+        out["loan_term_months"] = out.get("loan_duration_months", 0)
+    return dedupe_columns(out)
