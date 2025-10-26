@@ -34,6 +34,20 @@ os.makedirs(LANDING_IMG_DIR, exist_ok=True)
 st.set_page_config(page_title="AI Agent Sandbox — By the People, For the People", layout="wide")
 
 # ────────────────────────────────
+# SESSION DEFAULTS
+# ────────────────────────────────
+if "logged_in" not in st.session_state:
+    st.session_state.logged_in = False
+
+if "user_info" not in st.session_state:
+    st.session_state.user_info = {}
+
+st.session_state.user_info.setdefault("flagged", False)
+st.session_state.user_info.setdefault(
+    "timestamp", datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+)
+
+# ────────────────────────────────
 # HELPERS
 # ────────────────────────────────
 def load_image(base: str) -> Optional[str]:
@@ -150,133 +164,129 @@ footer {
 # ────────────────────────────────
 # LAYOUT
 # ────────────────────────────────
-col1, col2 = st.columns([1.1, 1.9], gap="large")
+if not st.session_state.logged_in:
+    col1, col2 = st.columns([1.1, 1.9], gap="large")
 
-with col1:
-    st.markdown("<div class='left-box'>", unsafe_allow_html=True)
-    logo_path = load_image("people_logo")
-    if logo_path:
-        st.image(logo_path, width=160)
-    else:
-        logo_upload = st.file_uploader("Upload People Logo", type=["jpg", "png", "webp"], key="upload_logo")
-        if logo_upload:
-            save_uploaded_image(logo_upload, "people_logo")
-            st.success("✅ Logo uploaded successfully! Refreshing...")
-            st.rerun()
+    with col1:
+        st.markdown("<div class='left-box'>", unsafe_allow_html=True)
+        logo_path = load_image("people_logo")
+        if logo_path:
+            st.image(logo_path, width=160)
+        else:
+            logo_upload = st.file_uploader("Upload People Logo", type=["jpg", "png", "webp"], key="upload_logo")
+            if logo_upload:
+                save_uploaded_image(logo_upload, "people_logo")
+                st.success("✅ Logo uploaded successfully! Refreshing...")
+                st.rerun()
 
-    st.markdown("""
-    <h1>✊ Let’s Build an AI by the People, for the People</h1>
-    <h3>⚙️ Ready-to-Use AI Agent Sandbox — From Sandbox to Production</h3>
-    <p>
-    A world-class open innovation space where anyone can build, test, and deploy AI agents using open-source code, explainable models, and modular templates.<br><br>
-    For developers, startups, and enterprises — experiment, customize, and scale AI without barriers.<br><br>
-    <b>Privacy & Data Sovereignty:</b> Each agent runs under strict privacy controls and complies with GDPR & Vietnam Data Law 2025. Only anonymized or synthetic data is used — your data never leaves your environment.<br><br>
-    <b>From Sandbox to Production:</b> Start with ready-to-use agent templates, adapt, test, and deploy — all on GPU-as-a-Service Cloud with zero CAPEX.<br><br>
-    You dream it — now you can build it.
-    </p>
-    <div style="text-align:center;margin-top:2rem;">
-        <a href="#credit_poc" style="text-decoration:none;">
-            <button style="background:linear-gradient(90deg,#2563eb,#1d4ed8);
-                           border:none;border-radius:12px;color:white;
-                           padding:16px 32px;font-size:18px;cursor:pointer;">
-                🚀 Start Building Now
-            </button>
-        </a>
-    </div>
-    """, unsafe_allow_html=True)
-    st.markdown("</div>", unsafe_allow_html=True)
+        st.markdown("""
+        <h1>✊ Let’s Build an AI by the People, for the People</h1>
+        <h3>⚙️ Ready-to-Use AI Agent Sandbox — From Sandbox to Production</h3>
+        <p>
+        A world-class open innovation space where anyone can build, test, and deploy AI agents using open-source code, explainable models, and modular templates.<br><br>
+        For developers, startups, and enterprises — experiment, customize, and scale AI without barriers.<br><br>
+        <b>Privacy & Data Sovereignty:</b> Each agent runs under strict privacy controls and complies with GDPR & Vietnam Data Law 2025. Only anonymized or synthetic data is used — your data never leaves your environment.<br><br>
+        <b>From Sandbox to Production:</b> Start with ready-to-use agent templates, adapt, test, and deploy — all on GPU-as-a-Service Cloud with zero CAPEX.<br><br>
+        You dream it — now you can build it.
+        </p>
+        <div style="text-align:center;margin-top:2rem;">
+            <a href="#credit_poc" style="text-decoration:none;">
+                <button style="background:linear-gradient(90deg,#2563eb,#1d4ed8);
+                               border:none;border-radius:12px;color:white;
+                               padding:16px 32px;font-size:18px;cursor:pointer;">
+                    🚀 Start Building Now
+                </button>
+            </a>
+        </div>
+        """, unsafe_allow_html=True)
+        st.markdown("</div>", unsafe_allow_html=True)
 
-with col2:
-    st.markdown("<div class='right-box'>", unsafe_allow_html=True)
-    st.markdown("<h2>📊 Global AI Agent Library</h2>", unsafe_allow_html=True)
-    st.caption("Explore sectors, industries, and ready-to-use AI agents across domains.")
+    with col2:
+        st.markdown("<div class='right-box'>", unsafe_allow_html=True)
+        st.markdown("<h2>📊 Global AI Agent Library</h2>", unsafe_allow_html=True)
+        st.caption("Explore sectors, industries, and ready-to-use AI agents across domains.")
 
-    rows = []
-    for sector, industry, agent, desc, status, emoji in AGENTS:
-        rating = round(random.uniform(3.5, 5.0), 1)
-        users = random.randint(800, 9000)
-        comments = random.randint(5, 120)
-        image_html = render_image_tag(agent, industry, emoji)
-        rows.append({
-            "🖼️": image_html,
-            "🏭 Sector": sector,
-            "🧩 Industry": industry,
-            "🤖 Agent": agent,
-            "🧠 Description": desc,
-            "📶 Status": f'<span class="status-{status.replace(" ", "")}">{status}</span>',
-            "⭐ Rating": "⭐" * int(rating) + "☆" * (5 - int(rating)),
-            "👥 Users": users,
-            "💬 Comments": comments
-        })
-    df = pd.DataFrame(rows)
-    st.write(df.to_html(escape=False, index=False), unsafe_allow_html=True)
-    st.markdown("</div>", unsafe_allow_html=True)
+        rows = []
+        for sector, industry, agent, desc, status, emoji in AGENTS:
+            rating = round(random.uniform(3.5, 5.0), 1)
+            users = random.randint(800, 9000)
+            comments = random.randint(5, 120)
+            image_html = render_image_tag(agent, industry, emoji)
+            rows.append({
+                "🖼️": image_html,
+                "🏭 Sector": sector,
+                "🧩 Industry": industry,
+                "🤖 Agent": agent,
+                "🧠 Description": desc,
+                "📶 Status": f'<span class="status-{status.replace(" ", "")}">{status}</span>',
+                "⭐ Rating": "⭐" * int(rating) + "☆" * (5 - int(rating)),
+                "👥 Users": users,
+                "💬 Comments": comments
+            })
+        df = pd.DataFrame(rows)
+        st.write(df.to_html(escape=False, index=False), unsafe_allow_html=True)
+        st.markdown("</div>", unsafe_allow_html=True)
 
+    # ─────────────────────────────────────────────
+    # WORKFLOW PIPELINE — WITH LOOPBACK
+    # ─────────────────────────────────────────────
+    st.markdown(
+        """
+        ### 🛠️ Workflow Pipeline Overview
+        1. **Synthetic Data Generator** – Create realistic datasets for testing.
+        2. **Anonymize & Sanitize Data** – Drop PII and scrub sensitive text.
+        3. **Credit Appraisal by AI Assistant** – Run agent-driven credit decisions.
+        4. **Human Review** – Evaluate and adjust AI outputs.
+        5. **Training (Feedback → Retrain)** – Feed human-labelled data back into training.
+        6. **Loop Back** – Re-run the agent with the newly trained model.
+        """
+    )
 
+    # ────────────────────────────────
+    # FOOTER
+    # ────────────────────────────────
+    st.markdown("<footer>Made with ❤️ by Dzoan Nguyen— Open AI Sandbox Initiative</footer>", unsafe_allow_html=True)
 
+    # ── Login Screen
+    with st.container():
+        st.markdown("### 🔐 Login (Demo Mode)")
+        col1, col2, col3 = st.columns([1, 1, 1])
+        with col1:
+            username = st.text_input("Username", value="", placeholder="e.g. dzoan")
+        with col2:
+            email = st.text_input("Email", value="", placeholder="e.g. dzoan@demo.local")
+        with col3:
+            password = st.text_input("Password", type="password", placeholder="Enter any password")
 
-# ─────────────────────────────────────────────
-# WORKFLOW PIPELINE — WITH LOOPBACK
-# ─────────────────────────────────────────────
-tabs = st.tabs([
-    "🧩 Step 1 / Synthetic Data Generator",
-    "🧹 Step 2 / Anonymize & Sanitize Data",
-    "🤖 Step 3 / Credit Appraisal by AI Assistant",
-    "🧑‍⚖️ Step 4 / Human Review",
-    "🔁 Step 5 / Training (Feedback → Retrain)",
-    "🔄 Step 6 / Loop Back to Step 3 → Use New Trained Model",
-])
+        login_btn = st.button("Login", type="primary", use_container_width=True)
 
-# ────────────────────────────────
-# FOOTER
-# ────────────────────────────────
-st.markdown("<footer>Made with ❤️ by Dzoan Nguyen— Open AI Sandbox Initiative</footer>", unsafe_allow_html=True)
+        if login_btn:
+            if username.strip() and email.strip():
+                st.session_state.user_info.update(
+                    {
+                        "name": username.strip(),
+                        "email": email.strip(),
+                        "flagged": False,
+                        "timestamp": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                    }
+                )
+                st.session_state.logged_in = True
+                st.session_state["login_flash"] = username.strip()
+            else:
+                st.error("Please enter both username and email to continue.")
+
+    st.stop()
 
 
 # ─────────────────────────────────────────────
 # HEADER — USER INFO + SECURITY
 
+flash_user = st.session_state.pop("login_flash", None)
+if flash_user:
+    st.success(f"✅ Logged in as {flash_user}")
+
 st.title("💳 AI Credit Appraisal Platform")
 st.caption("Generate, sanitize, and appraise credit with AI agent Power and Human Decisions  .")
-
-# ──Login  Screen
-
-with st.container():
-    st.markdown("### 🔐 Login (Demo Mode)")
-    col1, col2, col3 = st.columns([1, 1, 1])
-    with col1:
-        username = st.text_input("Username", value="", placeholder="e.g. dzoan")
-    with col2:
-        email = st.text_input("Email", value="", placeholder="e.g. dzoan@demo.local")
-    with col3:
-        password = st.text_input("Password", type="password", placeholder="Enter any password")
-
-    login_btn = st.button("Login", type="primary", use_container_width=True)
-
-    # Initialize session vars
-    if "logged_in" not in st.session_state:
-        st.session_state.logged_in = False
-    if "user_info" not in st.session_state:
-        st.session_state.user_info = {}
-
-    # Login handler
-    if login_btn:
-        if username.strip() and email.strip():
-            st.session_state.logged_in = True
-            st.session_state.user_info = {
-                "name": username.strip(),
-                "email": email.strip(),
-                "flagged": False,
-                "timestamp": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            }
-            st.success(f"✅ Logged in as {username}")
-        else:
-            st.error("Please enter both username and email to continue.")
-
-    # Guard clause — stop UI if not logged in
-    if not st.session_state.logged_in:
-        st.warning("You must log in to continue.")
-        st.stop()
 
 # Short aliases for backward compatibility
 user_name = st.session_state.user_info.get("name", "")
@@ -322,17 +332,23 @@ def strip_policy_banned(df: pd.DataFrame) -> pd.DataFrame:
     return df[keep]
 
 def append_user_info(df: pd.DataFrame) -> pd.DataFrame:
-    meta = st.session_state["user_info"]
+    if "user_info" not in st.session_state:
+        st.session_state.user_info = {}
+    meta = st.session_state.user_info
+    timestamp = meta.get("timestamp") or datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    meta["timestamp"] = timestamp
+
     out = df.copy()
-    out["session_user_name"] = meta["name"]
-    out["session_user_email"] = meta["email"]
-    out["session_flagged"] = meta["flagged"]
-    out["created_at"] = meta["timestamp"]
+    out["session_user_name"] = meta.get("name", "")
+    out["session_user_email"] = meta.get("email", "")
+    out["session_flagged"] = meta.get("flagged", False)
+    out["created_at"] = timestamp
     return dedupe_columns(out)
 
 def save_to_runs(df: pd.DataFrame, prefix: str) -> str:
     ts = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M")
-    flag_suffix = "_FLAGGED" if st.session_state["user_info"]["flagged"] else ""
+    flagged = bool(st.session_state.get("user_info", {}).get("flagged", False))
+    flag_suffix = "_FLAGGED" if flagged else ""
     fname = f"{prefix}_{ts}{flag_suffix}.csv"
     fpath = os.path.join(RUNS_DIR, fname)
     dedupe_columns(df).to_csv(fpath, index=False)
