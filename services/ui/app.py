@@ -32,6 +32,7 @@ os.makedirs(TMP_FEEDBACK_DIR, exist_ok=True)
 os.makedirs(LANDING_IMG_DIR, exist_ok=True)
 
 st.set_page_config(page_title="AI Agent Sandbox — By the People, For the People", layout="wide")
+st.markdown("<a name='top-anchor'></a>", unsafe_allow_html=True)
 
 # ────────────────────────────────
 # HELPERS
@@ -136,6 +137,21 @@ button {
 button:hover {
     transform: translateY(-2px);
     background: linear-gradient(90deg,#1d4ed8,#2563eb);
+}
+.top-nav-link {
+    background: linear-gradient(135deg, #1d4ed8, #2563eb);
+    padding: 0.6rem 1.25rem;
+    border-radius: 999px;
+    color: #f8fafc !important;
+    text-decoration: none !important;
+    font-weight: 600;
+    box-shadow: 0 12px 24px rgba(37, 99, 235, 0.25);
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+}
+.top-nav-link:hover {
+    background: linear-gradient(135deg, #2563eb, #1d4ed8);
 }
 footer {
     text-align: center;
@@ -325,6 +341,15 @@ user_name = st.session_state.user_info.get("name", "")
 user_email = st.session_state.user_info.get("email", "")
 flag_session = st.session_state.user_info.get("flagged", False)
 
+# Top navigation controls
+with st.container():
+    nav_cols = st.columns([0.25, 0.2, 0.55])
+    with nav_cols[0]:
+        st.markdown("<a class='top-nav-link' href='#top-anchor'>🏠 Home</a>", unsafe_allow_html=True)
+    with nav_cols[1]:
+        if st.button("🚪 Logout", key="top_logout_btn", use_container_width=True):
+            logout_user()
+
 
 # ─────────────────────────────────────────────
 # GLOBAL UTILS
@@ -371,6 +396,13 @@ def append_user_info(df: pd.DataFrame) -> pd.DataFrame:
     out["session_flagged"] = meta["flagged"]
     out["created_at"] = meta["timestamp"]
     return dedupe_columns(out)
+
+
+def logout_user() -> None:
+    st.session_state.clear()
+    st.rerun()
+
+
 def save_to_runs(df: pd.DataFrame, prefix: str) -> str:
     ts = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M")
     flag_suffix = "_FLAGGED" if st.session_state["user_info"]["flagged"] else ""
