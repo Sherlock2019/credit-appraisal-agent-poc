@@ -9,6 +9,7 @@ import io
 import json
 import random
 import datetime
+import textwrap
 from typing import Optional, Dict, List, Any
 
 import pandas as pd
@@ -32,6 +33,104 @@ os.makedirs(TMP_FEEDBACK_DIR, exist_ok=True)
 os.makedirs(LANDING_IMG_DIR, exist_ok=True)
 
 st.set_page_config(page_title="AI Agent Sandbox — By the People, For the People", layout="wide")
+
+# ────────────────────────────────
+# SESSION DEFAULTS
+# ────────────────────────────────
+if "logged_in" not in st.session_state:
+    st.session_state.logged_in = False
+
+if "user_info" not in st.session_state:
+    st.session_state.user_info = {}
+
+
+def ensure_user_info_defaults() -> Dict[str, Any]:
+    info = st.session_state.setdefault("user_info", {})
+    info.setdefault("name", "")
+    info.setdefault("email", "")
+    info.setdefault("flagged", False)
+    info.setdefault("timestamp", datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+    return info
+
+
+def reset_collateral_session() -> None:
+    st.session_state["asset_appraisal_result"] = None
+    st.session_state["asset_verified_result"] = None
+    st.session_state["asset_collateral_df"] = None
+    st.session_state["asset_collateral_path"] = ""
+    st.session_state["asset_collateral_credit_path"] = ""
+
+
+def reset_kyc_registry() -> None:
+    st.session_state["kyc_registry"] = None
+    st.session_state["kyc_registry_ready"] = None
+    st.session_state["kyc_registry_path"] = ""
+    st.session_state["kyc_registry_ready_path"] = ""
+    st.session_state["kyc_registry_generated_at"] = ""
+
+
+def go_to_public_home(*, clear_user: bool = False) -> None:
+    reset_collateral_session()
+    reset_kyc_registry()
+    st.session_state.workflow_stage = "data"
+    st.session_state.public_stage = "landing"
+    st.session_state.selected_agent = None
+    st.session_state.logged_in = False
+    if clear_user:
+        st.session_state.user_info = {
+            "name": "",
+            "email": "",
+            "flagged": False,
+            "timestamp": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        }
+    else:
+        ensure_user_info_defaults()
+
+
+def logout_user() -> None:
+    go_to_public_home(clear_user=True)
+
+
+ensure_user_info_defaults()
+
+if "workflow_stage" not in st.session_state:
+    st.session_state.workflow_stage = "data"
+
+if "public_stage" not in st.session_state:
+    st.session_state.public_stage = "landing"
+
+if "selected_agent" not in st.session_state:
+    st.session_state.selected_agent = None
+
+if "asset_appraisal_result" not in st.session_state:
+    st.session_state["asset_appraisal_result"] = None
+
+if "asset_verified_result" not in st.session_state:
+    st.session_state["asset_verified_result"] = None
+
+if "asset_collateral_df" not in st.session_state:
+    st.session_state["asset_collateral_df"] = None
+
+if "asset_collateral_path" not in st.session_state:
+    st.session_state["asset_collateral_path"] = ""
+
+if "asset_collateral_credit_path" not in st.session_state:
+    st.session_state["asset_collateral_credit_path"] = ""
+
+if "kyc_registry" not in st.session_state:
+    st.session_state["kyc_registry"] = None
+
+if "kyc_registry_ready" not in st.session_state:
+    st.session_state["kyc_registry_ready"] = None
+
+if "kyc_registry_path" not in st.session_state:
+    st.session_state["kyc_registry_path"] = ""
+
+if "kyc_registry_ready_path" not in st.session_state:
+    st.session_state["kyc_registry_ready_path"] = ""
+
+if "kyc_registry_generated_at" not in st.session_state:
+    st.session_state["kyc_registry_generated_at"] = ""
 
 # ────────────────────────────────
 # HELPERS
@@ -78,6 +177,42 @@ AGENTS = [
     ("⚖️ Legal & Government", "🏛️ Public Services", "🏛️ Citizen Service Agent", "Smart assistant for citizen services", "Coming Soon", "🏛️"),
     ("🛍️ Retail / SMB / Creative", "🏬 Retail & eCommerce", "📈 Sales Forecast Agent", "Predict demand & inventory trends", "Coming Soon", "📈"),
     ("🎬 Retail / SMB / Creative", "🎨 Media & Film", "🎬 Budget Cost Assistant", "Estimate, optimize, and track film & production costs using AI", "Coming Soon", "🎬"),
+]
+
+# ────────────────────────────────
+# PIPELINE CONFIG
+# ────────────────────────────────
+PIPELINE_STAGES: List[tuple[str, str, str]] = [
+    (
+        "data",
+        "🏦 Synthetic Data Generator",
+        "Create localized loan books and seed downstream stages with consistent datasets.",
+    ),
+    (
+        "kyc",
+        "🛂 KYC Agent",
+        "Prepare compliance dossiers, sanctions screening, and risk signals before underwriting.",
+    ),
+    (
+        "asset",
+        "🏛️ Asset Appraisal AI Agent",
+        "Verify collateral valuations, appraisal confidence, and eligibility for credit decisions.",
+    ),
+    (
+        "credit",
+        "🤖 Credit Appraisal AI Assistant",
+        "Score applications with explainable AI narratives and policy-aligned decisioning.",
+    ),
+    (
+        "review",
+        "🧑‍⚖️ Human Review",
+        "Audit AI outputs, adjust verdicts, and capture agreement plus remediation notes.",
+    ),
+    (
+        "training",
+        "🔁 Training (Feedback → Retrain)",
+        "Loop curated feedback into retraining jobs and promote production-ready models.",
+    ),
 ]
 
 # ────────────────────────────────
@@ -130,6 +265,166 @@ html, body, .block-container {
 }
 .status-Available {color: #22c55e; font-weight:600;}
 .status-ComingSoon {color: #f59e0b; font-weight:600;}
+.pipeline-hero {
+    background: linear-gradient(135deg, rgba(37,99,235,0.25), rgba(59,130,246,0.55));
+    border-radius: 28px;
+    padding: 32px 36px;
+    margin-bottom: 32px;
+    border: 1px solid rgba(148, 163, 184, 0.2);
+    box-shadow: 0 20px 40px rgba(15, 23, 42, 0.45);
+}
+.pipeline-hero__eyebrow {
+    text-transform: uppercase;
+    letter-spacing: 0.14em;
+    font-size: 0.75rem;
+    color: rgba(226, 232, 240, 0.85);
+}
+.pipeline-hero__header h1 {
+    font-size: 3rem;
+    font-weight: 900;
+    margin: 12px 0 8px;
+    color: #ffffff;
+}
+.pipeline-hero__header p {
+    font-size: 1.1rem;
+    color: #e2e8f0;
+    max-width: 720px;
+    margin-bottom: 0;
+}
+.pipeline-user-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 12px;
+    background: rgba(15, 23, 42, 0.65);
+    border-radius: 999px;
+    padding: 10px 18px;
+    border: 1px solid rgba(148, 163, 184, 0.25);
+    font-size: 0.95rem;
+    margin-bottom: 18px;
+}
+.pipeline-steps {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 18px;
+    margin-top: 26px;
+}
+.pipeline-step {
+    background: rgba(15, 23, 42, 0.75);
+    border-radius: 20px;
+    padding: 20px 22px;
+    border: 1px solid rgba(148, 163, 184, 0.18);
+    display: flex;
+    gap: 16px;
+    align-items: flex-start;
+    min-height: 140px;
+}
+.pipeline-step--active {
+    background: linear-gradient(160deg, rgba(59, 130, 246, 0.28), rgba(37, 99, 235, 0.42));
+    border-color: rgba(96, 165, 250, 0.65);
+    box-shadow: 0 18px 32px rgba(30, 64, 175, 0.35);
+}
+.pipeline-step__index {
+    width: 42px;
+    height: 42px;
+    border-radius: 14px;
+    background: linear-gradient(180deg,#38bdf8,#2563eb);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 800;
+    color: #0f172a;
+    font-size: 1.1rem;
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.35);
+}
+.pipeline-step__index--active {
+    background: linear-gradient(180deg,#facc15,#f59e0b);
+    color: #1f2937;
+}
+.pipeline-step__body {
+    flex: 1;
+}
+.pipeline-step__title {
+    font-weight: 700;
+    font-size: 1.1rem;
+    color: #f8fafc;
+    margin-bottom: 6px;
+}
+.pipeline-step__body p {
+    margin: 0;
+    font-size: 0.95rem;
+    color: rgba(226,232,240,0.85);
+}
+.kyc-panel {
+    background: linear-gradient(135deg, rgba(15,23,42,0.85), rgba(30,64,175,0.55));
+    border-radius: 26px;
+    padding: 28px 32px;
+    border: 1px solid rgba(148, 163, 184, 0.25);
+    box-shadow: 0 20px 38px rgba(8, 15, 35, 0.55);
+    margin-top: 12px;
+}
+.kyc-panel__title {
+    font-size: 1.4rem;
+    font-weight: 800;
+    color: #f8fafc;
+    margin-bottom: 6px;
+}
+.kyc-panel__subtitle {
+    color: rgba(226, 232, 240, 0.85);
+    font-size: 0.95rem;
+    margin-bottom: 18px;
+}
+.kyc-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 16px;
+}
+.kyc-card {
+    background: rgba(15, 23, 42, 0.78);
+    border-radius: 18px;
+    padding: 18px 20px;
+    border: 1px solid rgba(148, 163, 184, 0.22);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+.kyc-card__label {
+    text-transform: uppercase;
+    font-size: 0.75rem;
+    letter-spacing: 0.12em;
+    color: rgba(148, 163, 184, 0.85);
+}
+.kyc-card__value {
+    font-size: 2.1rem;
+    font-weight: 800;
+    color: #e2e8f0;
+}
+.kyc-card__note {
+    font-size: 0.9rem;
+    color: rgba(226, 232, 240, 0.75);
+}
+.kyc-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 12px;
+    border-radius: 999px;
+    font-size: 0.8rem;
+    font-weight: 600;
+    background: rgba(34, 197, 94, 0.18);
+    color: #4ade80;
+    border: 1px solid rgba(74, 222, 128, 0.35);
+}
+.kyc-badge--warning {
+    background: rgba(250, 204, 21, 0.2);
+    color: #facc15;
+    border-color: rgba(250, 204, 21, 0.35);
+}
+.kyc-badge--alert {
+    background: rgba(248, 113, 113, 0.2);
+    color: #f87171;
+    border-color: rgba(248, 113, 113, 0.35);
+}
 button {
     transition: all 0.25s ease-in-out;
 }
@@ -147,141 +442,46 @@ footer {
 </style>
 """, unsafe_allow_html=True)
 
-# ────────────────────────────────
-# LAYOUT
-# ────────────────────────────────
-col1, col2 = st.columns([1.1, 1.9], gap="large")
 
-with col1:
-    st.markdown("<div class='left-box'>", unsafe_allow_html=True)
-    logo_path = load_image("people_logo")
-    if logo_path:
-        st.image(logo_path, width=160)
-    else:
-        logo_upload = st.file_uploader("Upload People Logo", type=["jpg", "png", "webp"], key="upload_logo")
-        if logo_upload:
-            save_uploaded_image(logo_upload, "people_logo")
-            st.success("✅ Logo uploaded successfully! Refreshing...")
-            st.rerun()
+def render_pipeline_hero(active_stage: str) -> None:
+    step_blocks: List[str] = []
+    for idx, (key, title, desc) in enumerate(PIPELINE_STAGES, start=1):
+        is_active = key == active_stage
+        step_class = "pipeline-step" + (" pipeline-step--active" if is_active else "")
+        index_class = "pipeline-step__index" + (
+            " pipeline-step__index--active" if is_active else ""
+        )
+        step_blocks.append(
+            textwrap.dedent(
+                f"""
+                <div class='{step_class}'>
+                    <div class='{index_class}'>{idx}</div>
+                    <div class='pipeline-step__body'>
+                        <div class='pipeline-step__title'>{title}</div>
+                        <p>{desc}</p>
+                    </div>
+                </div>
+                """
+            ).strip()
+        )
 
-    st.markdown("""
-    <h1>✊ Let’s Build an AI by the People, for the People</h1>
-    <h3>⚙️ Ready-to-Use AI Agent Sandbox — From Sandbox to Production</h3>
-    <p>
-    A world-class open innovation space where anyone can build, test, and deploy AI agents using open-source code, explainable models, and modular templates.<br><br>
-    For developers, startups, and enterprises — experiment, customize, and scale AI without barriers.<br><br>
-    <b>Privacy & Data Sovereignty:</b> Each agent runs under strict privacy controls and complies with GDPR & Vietnam Data Law 2025. Only anonymized or synthetic data is used — your data never leaves your environment.<br><br>
-    <b>From Sandbox to Production:</b> Start with ready-to-use agent templates, adapt, test, and deploy — all on GPU-as-a-Service Cloud with zero CAPEX.<br><br>
-    You dream it — now you can build it.
-    </p>
-    <div style="text-align:center;margin-top:2rem;">
-        <a href="#credit_poc" style="text-decoration:none;">
-            <button style="background:linear-gradient(90deg,#2563eb,#1d4ed8);
-                           border:none;border-radius:12px;color:white;
-                           padding:16px 32px;font-size:18px;cursor:pointer;">
-                🚀 Start Building Now
-            </button>
-        </a>
-    </div>
-    """, unsafe_allow_html=True)
-    st.markdown("</div>", unsafe_allow_html=True)
+    steps_html = "\n".join(step_blocks)
+    hero_html = textwrap.dedent(
+        f"""
+        <div class='pipeline-hero'>
+            <div class='pipeline-hero__header'>
+                <div class='pipeline-hero__eyebrow'>Agent Workflow</div>
+                <h1>💳 AI Credit Appraisal Platform</h1>
+                <p>Generate, sanitize, and appraise credit with AI agent power and human decisions.</p>
+            </div>
+            <div class='pipeline-steps'>
+                {steps_html}
+            </div>
+        </div>
+        """
+    ).strip()
 
-with col2:
-    st.markdown("<div class='right-box'>", unsafe_allow_html=True)
-    st.markdown("<h2>📊 Global AI Agent Library</h2>", unsafe_allow_html=True)
-    st.caption("Explore sectors, industries, and ready-to-use AI agents across domains.")
-
-    rows = []
-    for sector, industry, agent, desc, status, emoji in AGENTS:
-        rating = round(random.uniform(3.5, 5.0), 1)
-        users = random.randint(800, 9000)
-        comments = random.randint(5, 120)
-        image_html = render_image_tag(agent, industry, emoji)
-        rows.append({
-            "🖼️": image_html,
-            "🏭 Sector": sector,
-            "🧩 Industry": industry,
-            "🤖 Agent": agent,
-            "🧠 Description": desc,
-            "📶 Status": f'<span class="status-{status.replace(" ", "")}">{status}</span>',
-            "⭐ Rating": "⭐" * int(rating) + "☆" * (5 - int(rating)),
-            "👥 Users": users,
-            "💬 Comments": comments
-        })
-    df = pd.DataFrame(rows)
-    st.write(df.to_html(escape=False, index=False), unsafe_allow_html=True)
-    st.markdown("</div>", unsafe_allow_html=True)
-
-
-
-
-# ─────────────────────────────────────────────
-# WORKFLOW PIPELINE — WITH LOOPBACK
-# ─────────────────────────────────────────────
-tabs = st.tabs([
-    "🧩 Step 1 / Synthetic Data Generator",
-    "🧹 Step 2 / Anonymize & Sanitize Data",
-    "🤖 Step 3 / Credit Appraisal by AI Assistant",
-    "🧑‍⚖️ Step 4 / Human Review",
-    "🔁 Step 5 / Training (Feedback → Retrain)",
-    "🔄 Step 6 / Loop Back to Step 3 → Use New Trained Model",
-])
-
-# ────────────────────────────────
-# FOOTER
-# ────────────────────────────────
-st.markdown("<footer>Made with ❤️ by Dzoan Nguyen— Open AI Sandbox Initiative</footer>", unsafe_allow_html=True)
-
-
-# ─────────────────────────────────────────────
-# HEADER — USER INFO + SECURITY
-
-st.title("💳 AI Credit Appraisal Platform")
-st.caption("Generate, sanitize, and appraise credit with AI agent Power and Human Decisions  .")
-
-# ──Login  Screen
-
-with st.container():
-    st.markdown("### 🔐 Login (Demo Mode)")
-    col1, col2, col3 = st.columns([1, 1, 1])
-    with col1:
-        username = st.text_input("Username", value="", placeholder="e.g. dzoan")
-    with col2:
-        email = st.text_input("Email", value="", placeholder="e.g. dzoan@demo.local")
-    with col3:
-        password = st.text_input("Password", type="password", placeholder="Enter any password")
-
-    login_btn = st.button("Login", type="primary", use_container_width=True)
-
-    # Initialize session vars
-    if "logged_in" not in st.session_state:
-        st.session_state.logged_in = False
-    if "user_info" not in st.session_state:
-        st.session_state.user_info = {}
-
-    # Login handler
-    if login_btn:
-        if username.strip() and email.strip():
-            st.session_state.logged_in = True
-            st.session_state.user_info = {
-                "name": username.strip(),
-                "email": email.strip(),
-                "flagged": False,
-                "timestamp": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            }
-            st.success(f"✅ Logged in as {username}")
-        else:
-            st.error("Please enter both username and email to continue.")
-
-    # Guard clause — stop UI if not logged in
-    if not st.session_state.logged_in:
-        st.warning("You must log in to continue.")
-        st.stop()
-
-# Short aliases for backward compatibility
-user_name = st.session_state.user_info.get("name", "")
-user_email = st.session_state.user_info.get("email", "")
-flag_session = st.session_state.user_info.get("flagged", False)
+    st.markdown(hero_html, unsafe_allow_html=True)
 
 
 # ─────────────────────────────────────────────
@@ -321,18 +521,175 @@ def strip_policy_banned(df: pd.DataFrame) -> pd.DataFrame:
         keep.append(c)
     return df[keep]
 
-def append_user_info(df: pd.DataFrame) -> pd.DataFrame:
-    meta = st.session_state["user_info"]
+def ensure_application_ids(df: pd.DataFrame) -> pd.DataFrame:
     out = df.copy()
-    out["session_user_name"] = meta["name"]
-    out["session_user_email"] = meta["email"]
-    out["session_flagged"] = meta["flagged"]
-    out["created_at"] = meta["timestamp"]
+    if "application_id" not in out.columns:
+        out["application_id"] = [f"APP_{i:04d}" for i in range(1, len(out) + 1)]
+    out["application_id"] = out["application_id"].astype(str)
+    return out
+
+def sanitize_dataset(df: pd.DataFrame) -> pd.DataFrame:
+    safe = dedupe_columns(df)
+    safe, _ = drop_pii_columns(safe)
+    safe = strip_policy_banned(safe)
+    safe = dedupe_columns(safe)
+    return ensure_application_ids(safe)
+
+def resolve_dataset_choice(choice: str, *, sanitize: bool = True) -> Optional[pd.DataFrame]:
+    df: Optional[pd.DataFrame] = None
+    if choice == "Use synthetic (ANON)":
+        df = st.session_state.get("synthetic_df")
+    elif choice == "Use synthetic (RAW – auto-sanitize)":
+        df = st.session_state.get("synthetic_raw_df")
+    elif choice == "Use anonymized dataset":
+        df = st.session_state.get("anonymized_df")
+    elif choice == "Use collateral verification output":
+        df = st.session_state.get("asset_verified_result") or st.session_state.get("asset_collateral_df")
+    elif choice == "Use KYC registry (anonymized)":
+        df = st.session_state.get("kyc_registry_ready")
+    elif choice == "Upload manually":
+        up_bytes = st.session_state.get("manual_upload_bytes")
+        if up_bytes:
+            try:
+                df = pd.read_csv(io.BytesIO(up_bytes))
+            except Exception:
+                df = None
+
+    if df is None:
+        return None
+
+    df = dedupe_columns(df)
+    if sanitize:
+        try:
+            df = sanitize_dataset(df)
+        except Exception:
+            df = ensure_application_ids(df)
+    else:
+        df = ensure_application_ids(df)
+    return df
+
+def build_collateral_report(
+    df: pd.DataFrame,
+    *,
+    confidence_threshold: float = 0.88,
+    value_ratio: float = 0.8,
+) -> tuple[pd.DataFrame, List[str]]:
+    if df is None or df.empty:
+        return pd.DataFrame(), []
+
+    records = df.to_dict(orient="records")
+    total = len(records)
+    progress = st.progress(0.0) if total > 1 else None
+    session = requests.Session()
+    rows: List[Dict[str, Any]] = []
+    errors: List[str] = []
+
+    for idx, record in enumerate(records, start=1):
+        asset_type = str(record.get("collateral_type") or "Collateral Asset")
+        declared_value = _to_float(record.get("collateral_value"), 0.0)
+        loan_amount = _to_float(record.get("loan_amount"), 0.0)
+        metadata = {
+            "application_id": record.get("application_id"),
+            "declared_value": declared_value,
+            "loan_amount": loan_amount,
+            "currency_code": record.get("currency_code") or st.session_state.get("currency_code"),
+        }
+
+        payload = {"asset_type": asset_type, "metadata": json.dumps(metadata, default=str)}
+
+        estimated_value = declared_value
+        confidence = 0.0
+        asset_result: Dict[str, Any] = {}
+        error_message = ""
+
+        try:
+            response = session.post(
+                f"{API_URL}/v1/agents/asset_appraisal/run",
+                data=payload,
+                timeout=30,
+            )
+            response.raise_for_status()
+            asset_result = response.json().get("result", {}) or {}
+            estimated_value = _to_float(asset_result.get("estimated_value"), declared_value)
+            confidence = _to_float(asset_result.get("confidence"), 0.0)
+        except Exception as exc:  # pragma: no cover - defensive
+            error_message = str(exc)
+            errors.append(error_message)
+
+        value_threshold = 0.0
+        if loan_amount:
+            value_threshold = loan_amount * value_ratio
+        elif declared_value:
+            value_threshold = declared_value * value_ratio
+
+        reasons: List[str] = []
+        meets_confidence = confidence >= confidence_threshold
+        meets_value = True if value_threshold == 0 else estimated_value >= value_threshold
+
+        if not meets_confidence:
+            reasons.append(
+                f"Confidence {confidence:.2f} below threshold {confidence_threshold:.2f}"
+            )
+        if not meets_value:
+            if loan_amount:
+                reasons.append(
+                    f"Estimated value {estimated_value:,.0f} below {value_ratio:.0%} of loan {loan_amount:,.0f}"
+                )
+            else:
+                reasons.append(
+                    f"Estimated value {estimated_value:,.0f} below threshold {value_threshold:,.0f}"
+                )
+        if error_message:
+            reasons.append(f"Asset agent error: {error_message}")
+        if not reasons:
+            reasons.append("Confidence and value thresholds satisfied")
+
+        verified = meets_confidence and meets_value and not error_message
+        status_label = "Verified" if verified else "Failed"
+
+        enriched = dict(record)
+        enriched.update(
+            {
+                "collateral_estimated_value": round(estimated_value, 2),
+                "collateral_confidence": round(confidence, 4),
+                "collateral_verified": bool(verified),
+                "collateral_status": status_label,
+                "collateral_verification_reason": "; ".join(reasons),
+                "collateral_agent_asset_id": asset_result.get("asset_id"),
+                "collateral_agent_model": asset_result.get("model_name"),
+                "collateral_agent_timestamp": asset_result.get("timestamp"),
+                "collateral_value_threshold": round(value_threshold, 2),
+                "collateral_checked_at": datetime.datetime.utcnow().isoformat(),
+            }
+        )
+        rows.append(enriched)
+
+        if progress is not None:
+            progress.progress(idx / total)
+
+    if progress is not None:
+        progress.empty()
+
+    return dedupe_columns(pd.DataFrame(rows)), errors
+
+def append_user_info(df: pd.DataFrame) -> pd.DataFrame:
+    if "user_info" not in st.session_state:
+        st.session_state.user_info = {}
+    meta = st.session_state.user_info
+    timestamp = meta.get("timestamp") or datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    meta["timestamp"] = timestamp
+
+    out = df.copy()
+    out["session_user_name"] = meta.get("name", "")
+    out["session_user_email"] = meta.get("email", "")
+    out["session_flagged"] = meta.get("flagged", False)
+    out["created_at"] = timestamp
     return dedupe_columns(out)
 
 def save_to_runs(df: pd.DataFrame, prefix: str) -> str:
     ts = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M")
-    flag_suffix = "_FLAGGED" if st.session_state["user_info"]["flagged"] else ""
+    flagged = bool(st.session_state.get("user_info", {}).get("flagged", False))
+    flag_suffix = "_FLAGGED" if flagged else ""
     fname = f"{prefix}_{ts}{flag_suffix}.csv"
     fpath = os.path.join(RUNS_DIR, fname)
     dedupe_columns(df).to_csv(fpath, index=False)
@@ -357,6 +714,12 @@ def _safe_json(x):
         except Exception:
             return {}
     return {}
+
+def _to_float(value: Any, default: float = 0.0) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
 
 def fmt_currency_label(base: str) -> str:
     sym = st.session_state.get("currency_symbol", "")
@@ -668,19 +1031,147 @@ def render_credit_dashboard(df: pd.DataFrame, currency_symbol: str = ""):
         mix["Ratio"] = (mix["Count"] / mix["Count"].sum()).round(3)
         st.markdown("### 👥 Customer Mix")
         st.dataframe(mix, use_container_width=True, height=220)
-
-# ─────────────────────────────────────────────
-# TABS
-tab_gen, tab_clean, tab_run, tab_review, tab_train = st.tabs([
-    "🏦 Synthetic Data Generator",
-    "🧹 Anonymize & Sanitize Data",
-    "🤖 Credit appraisal by AI assistant",
-    "🧑‍⚖️ Human Review",
-    "🔁 Training (Feedback → Retrain)"
-])
-
 # ─────────────────────────────────────────────
 # DATA GENERATORS
+
+
+def _rng_choice(rng: np.random.Generator, items: List[Any], *, weights: Optional[List[float]] = None) -> Any:
+    if weights is not None:
+        return rng.choice(items, p=np.array(weights) / np.sum(weights))
+    return rng.choice(items)
+
+
+def generate_kyc_registry(base_df: Optional[pd.DataFrame], size: int = 8) -> pd.DataFrame:
+    rng = np.random.default_rng()
+    base = ensure_application_ids(base_df) if isinstance(base_df, pd.DataFrame) and not base_df.empty else None
+    if base is not None:
+        replace = len(base) < size
+        sample = base.sample(n=size, replace=replace, random_state=int(rng.integers(0, 1_000_000)))
+        sample = sample.reset_index(drop=True)
+    else:
+        sample = pd.DataFrame()
+
+    names = [
+        "Alice Nguyen",
+        "Bao Tran",
+        "Caroline Pham",
+        "Daniel Ho",
+        "Emma Vu",
+        "Felix Lam",
+        "Gia Le",
+        "Huy Do",
+        "Isabella Dang",
+        "Julian Khang",
+    ]
+    countries = [
+        "Vietnam",
+        "Singapore",
+        "United States",
+        "United Kingdom",
+        "France",
+        "Germany",
+        "Canada",
+        "Australia",
+        "Japan",
+        "South Korea",
+    ]
+    owners = ["Alex Ho", "Mia Tran", "Duy Pham", "Laura Chen", "Oliver Nguyen"]
+    pep_outcomes = ["No match", "Possible match", "Confirmed"]
+    aml_risks = ["Low", "Medium", "High", "Critical"]
+    aml_weights = [0.58, 0.26, 0.12, 0.04]
+    kyc_statuses = ["Cleared", "Pending Docs", "Enhanced Due Diligence"]
+    doc_statuses = ["Validated", "Expired", "Re-requested"]
+
+    today = datetime.datetime.now()
+    records: List[Dict[str, Any]] = []
+    for idx in range(size):
+        base_row = sample.iloc[idx] if not sample.empty else {}
+        application_id = str(base_row.get("application_id", f"APP_{idx+1:04d}"))
+        full_name = base_row.get("customer_name") or base_row.get("name") or rng.choice(names)
+        alias = f"Client-{application_id[-4:]}"
+        country = base_row.get("country") or _rng_choice(rng, countries)
+
+        aml_risk = _rng_choice(rng, aml_risks, weights=aml_weights)
+        pep_status = _rng_choice(rng, pep_outcomes, weights=[0.78, 0.17, 0.05])
+        kyc_state = _rng_choice(rng, kyc_statuses, weights=[0.64, 0.23, 0.13])
+        doc_state = _rng_choice(rng, doc_statuses, weights=[0.72, 0.18, 0.10])
+
+        watch_hits = int(rng.integers(0, 2))
+        if aml_risk in {"High", "Critical"}:
+            watch_hits = int(rng.integers(1, 4))
+        elif pep_status != "No match":
+            watch_hits = int(rng.integers(1, 3))
+
+        last_review = today - datetime.timedelta(days=int(rng.integers(2, 90)))
+        next_refresh = last_review + datetime.timedelta(days=int(rng.integers(45, 150)))
+
+        compliance_notes = {
+            "Cleared": "Standard KYC completed. Continuous transaction monitoring in place.",
+            "Pending Docs": "Awaiting updated proof of income and national ID renewal.",
+            "Enhanced Due Diligence": "High exposure market. Manual review scheduled with compliance officer.",
+        }[kyc_state]
+
+        records.append(
+            {
+                "kyc_reference": f"KYC-{today.strftime('%y%m')}-{idx+1:03d}",
+                "application_id": application_id,
+                "customer_name": full_name,
+                "customer_alias": alias,
+                "country": country,
+                "aml_risk": aml_risk,
+                "pep_status": pep_status,
+                "kyc_status": kyc_state,
+                "document_status": doc_state,
+                "document_score": round(float(rng.uniform(72.0, 98.0)), 1),
+                "watchlist_hits": watch_hits,
+                "kyc_owner": _rng_choice(rng, owners),
+                "kyc_last_reviewed": last_review.strftime("%Y-%m-%d"),
+                "next_refresh_due": next_refresh.strftime("%Y-%m-%d"),
+                "compliance_notes": compliance_notes,
+            }
+        )
+
+    df = pd.DataFrame(records)
+    return dedupe_columns(df)
+
+
+def build_session_kyc_registry(force: bool = False) -> Optional[pd.DataFrame]:
+    existing = st.session_state.get("kyc_registry")
+    if not force and isinstance(existing, pd.DataFrame) and not existing.empty:
+        return existing
+
+    base_candidate = (
+        st.session_state.get("synthetic_raw_df")
+        or st.session_state.get("synthetic_df")
+        or st.session_state.get("anonymized_df")
+    )
+
+    generated_at = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    kyc_df = generate_kyc_registry(base_candidate, size=8)
+    st.session_state["kyc_registry"] = kyc_df
+    st.session_state["kyc_registry_generated_at"] = generated_at
+
+    try:
+        ready = sanitize_dataset(kyc_df)
+    except Exception:
+        ready = ensure_application_ids(kyc_df)
+
+    st.session_state["kyc_registry_ready"] = ready
+
+    try:
+        raw_path = save_to_runs(append_user_info(kyc_df), "kyc_registry")
+        st.session_state["kyc_registry_path"] = raw_path
+    except Exception:  # pragma: no cover - filesystem access
+        st.session_state["kyc_registry_path"] = ""
+
+    try:
+        ready_path = save_to_runs(append_user_info(ready), "kyc_registry_anonymized")
+        st.session_state["kyc_registry_ready_path"] = ready_path
+    except Exception:  # pragma: no cover - filesystem access
+        st.session_state["kyc_registry_ready_path"] = ""
+
+    return kyc_df
+
 
 def generate_raw_synthetic(n: int, non_bank_ratio: float) -> pd.DataFrame:
     rng = np.random.default_rng(42)
@@ -790,26 +1281,215 @@ def to_agent_schema(df: pd.DataFrame) -> pd.DataFrame:
     if "loan_term_months" not in out.columns:
         out["loan_term_months"] = out.get("loan_duration_months", 0)
     return dedupe_columns(out)
+# ────────────────────────────────
+# LAYOUT
+# ────────────────────────────────
+if not st.session_state.logged_in:
+    st.session_state.workflow_stage = "data"
+    stage = st.session_state.public_stage
+
+    if stage == "landing":
+        col1, col2 = st.columns([1.1, 1.9], gap="large")
+
+        with col1:
+            st.markdown("<div class='left-box'>", unsafe_allow_html=True)
+            logo_path = load_image("people_logo")
+            if logo_path:
+                st.image(logo_path, width=160)
+            else:
+                logo_upload = st.file_uploader("Upload People Logo", type=["jpg", "png", "webp"], key="upload_logo")
+                if logo_upload:
+                    save_uploaded_image(logo_upload, "people_logo")
+                    st.success("✅ Logo uploaded successfully! Refreshing...")
+                    st.rerun()
+
+            st.markdown(
+                """
+                <h1>✊ Let’s Build an AI by the People, for the People</h1>
+                <h3>⚙️ Ready-to-Use AI Agent Sandbox — From Sandbox to Production</h3>
+                <p>
+                A world-class open innovation space where anyone can build, test, and deploy AI agents using open-source code, explainable models, and modular templates.<br><br>
+                For developers, startups, and enterprises — experiment, customize, and scale AI without barriers.<br><br>
+                <b>Privacy & Data Sovereignty:</b> Each agent runs under strict privacy controls and complies with GDPR & Vietnam Data Law 2025. Only anonymized or synthetic data is used — your data never leaves your environment.<br><br>
+                <b>From Sandbox to Production:</b> Start with ready-to-use agent templates, adapt, test, and deploy — all on GPU-as-a-Service Cloud with zero CAPEX.<br><br>
+                You dream it — now you can build it.
+                </p>
+                """,
+                unsafe_allow_html=True,
+            )
+
+            if st.button("🚀 Start Building Now", key="btn_start_building"):
+                st.session_state.public_stage = "agents"
+                st.rerun()
+
+            st.markdown("</div>", unsafe_allow_html=True)
+
+        with col2:
+            st.markdown("<div class='right-box'>", unsafe_allow_html=True)
+            st.markdown("<h2>📊 Global AI Agent Library</h2>", unsafe_allow_html=True)
+            st.caption("Explore sectors, industries, and ready-to-use AI agents across domains.")
+
+            rows = []
+            for sector, industry, agent, desc, status, emoji in AGENTS:
+                rating = round(random.uniform(3.5, 5.0), 1)
+                users = random.randint(800, 9000)
+                comments = random.randint(5, 120)
+                image_html = render_image_tag(agent, industry, emoji)
+                rows.append(
+                    {
+                        "🖼️": image_html,
+                        "🏭 Sector": sector,
+                        "🧩 Industry": industry,
+                        "🤖 Agent": agent,
+                        "🧠 Description": desc,
+                        "📶 Status": f'<span class="status-{status.replace(" ", "")}">{status}</span>',
+                        "⭐ Rating": "⭐" * int(rating) + "☆" * (5 - int(rating)),
+                        "👥 Users": users,
+                        "💬 Comments": comments,
+                    }
+                )
+            df = pd.DataFrame(rows)
+            st.write(df.to_html(escape=False, index=False), unsafe_allow_html=True)
+            st.markdown("</div>", unsafe_allow_html=True)
+
+        st.markdown("<footer>Made with ❤️ by Dzoan Nguyen— Open AI Sandbox Initiative</footer>", unsafe_allow_html=True)
+        st.stop()
+
+    if stage == "agents":
+        top_cols = st.columns([1, 4, 1])
+        with top_cols[0]:
+            if st.button("⬅️ Back", key="btn_back_to_landing"):
+                st.session_state.public_stage = "landing"
+                st.rerun()
+        with top_cols[1]:
+            st.title("🤖 Available AI Agents")
+            st.caption("Browse ready-to-launch agents. Click Launch to continue to login.")
+
+        for idx, (sector, industry, agent, desc, status, emoji) in enumerate(AGENTS):
+            row = st.container()
+            with row:
+                cols = st.columns([1.5, 1.5, 2.2, 2.8, 1.2])
+                cols[0].markdown(f"**{sector}**")
+                cols[1].markdown(f"{industry}")
+                cols[2].markdown(f"**{agent}**<br/><span style='color:#94a3b8'>{desc}</span>", unsafe_allow_html=True)
+                cols[3].markdown(
+                    "Status: "
+                    + ("✅ <span style='color:#22c55e'>Available</span>" if status == "Available" else "🕓 <span style='color:#f59e0b'>Coming Soon</span>"),
+                    unsafe_allow_html=True,
+                )
+                if status == "Available":
+                    if cols[4].button("Launch", key=f"launch_{idx}"):
+                        st.session_state.selected_agent = agent
+                        st.session_state.public_stage = "login"
+                        st.rerun()
+                else:
+                    cols[4].button("Coming Soon", key=f"launch_{idx}", disabled=True)
+
+            if idx < len(AGENTS) - 1:
+                st.divider()
+
+        st.markdown("<footer>Made with ❤️ by Dzoan Nguyen— Open AI Sandbox Initiative</footer>", unsafe_allow_html=True)
+        st.stop()
+
+    if stage == "login":
+        agent_label = st.session_state.selected_agent or "AI Agent"
+        top_cols = st.columns([1, 4, 1])
+        with top_cols[0]:
+            if st.button("⬅️ Back to Agents", key="btn_back_to_agents"):
+                st.session_state.public_stage = "agents"
+                st.rerun()
+        with top_cols[1]:
+            st.title(f"🔐 Login to {agent_label}")
+            st.caption("Enter demo credentials to access the workflow.")
+
+        col1, col2, col3 = st.columns([1, 1, 1])
+        with col1:
+            username = st.text_input("Username", value="", placeholder="e.g. dzoan")
+        with col2:
+            email = st.text_input("Email", value="", placeholder="e.g. dzoan@demo.local")
+        with col3:
+            password = st.text_input("Password", type="password", placeholder="Enter any password")
+
+        if st.button("Login", type="primary", use_container_width=True, key="btn_public_login"):
+            if username.strip() and email.strip():
+                st.session_state.user_info.update(
+                    {
+                        "name": username.strip(),
+                        "email": email.strip(),
+                        "flagged": False,
+                        "timestamp": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                    }
+                )
+                st.session_state.workflow_stage = "data"
+                st.session_state["asset_appraisal_result"] = None
+                st.session_state["asset_verified_result"] = None
+                st.session_state["asset_collateral_df"] = None
+                st.session_state["asset_collateral_path"] = ""
+                st.session_state["asset_collateral_credit_path"] = ""
+                st.session_state.logged_in = True
+                st.session_state["login_flash"] = username.strip()
+                st.session_state.public_stage = "landing"
+                st.session_state.selected_agent = None
+            else:
+                st.error("Please enter both username and email to continue.")
+
+        st.markdown("<footer>Made with ❤️ by Dzoan Nguyen— Open AI Sandbox Initiative</footer>", unsafe_allow_html=True)
+        st.stop()
+
 
 # ─────────────────────────────────────────────
-# 🏦 TAB 1 — Synthetic Data Generator
-with tab_gen:
+# HEADER — USER INFO + SECURITY
+
+flash_user = st.session_state.pop("login_flash", None)
+if flash_user:
+    st.success(f"✅ Logged in as {flash_user}")
+
+user_name = st.session_state.user_info.get("name", "")
+user_email = st.session_state.user_info.get("email", "")
+flag_session = st.session_state.user_info.get("flagged", False)
+
+workflow_stage = st.session_state.get("workflow_stage", "data")
+
+if workflow_stage == "data":
+    render_pipeline_hero("data")
+
+    st.title("🏦 Synthetic Data Factory")
+    st.caption("Generate localized loan books and prep sanitized datasets for downstream agents.")
+
+    nav_cols = st.columns([1, 1, 2, 1])
+    with nav_cols[0]:
+        if st.button("🏠 Back to Home", key="btn_home_data_stage"):
+            go_to_public_home(clear_user=False)
+            st.rerun()
+    with nav_cols[1]:
+        if st.button("🛂 Continue to KYC Stage", key="btn_to_kyc_stage"):
+            st.session_state.workflow_stage = "kyc"
+            st.rerun()
+    with nav_cols[3]:
+        if st.button("🚪 Logout", key="btn_logout_data_stage"):
+            logout_user()
+            st.rerun()
+
+    st.markdown(f"👤 **User:** {user_name or 'Unknown'} · ✉️ {user_email or '—'}")
+
     st.subheader("🏦 Synthetic Credit Data Generator")
 
-    # Currency selector (before generation)
     c1, c2 = st.columns([1, 2])
     with c1:
         code = st.selectbox(
             "Currency",
             list(CURRENCY_OPTIONS.keys()),
             index=list(CURRENCY_OPTIONS.keys()).index(st.session_state["currency_code"]),
-            help="All monetary fields will be in this local currency."
+            help="All monetary fields will be in this local currency.",
         )
         if code != st.session_state["currency_code"]:
             st.session_state["currency_code"] = code
             set_currency_defaults()
     with c2:
-        st.info(f"Amounts will be generated in **{st.session_state['currency_label']}**.", icon="💰")
+        st.info(
+            f"Amounts will be generated in **{st.session_state['currency_label']}**.",
+            icon="💰",
+        )
 
     rows = st.slider("Number of rows to generate", 50, 2000, 200, step=50)
     non_bank_ratio = st.slider("Share of non-bank customers", 0.0, 1.0, 0.30, 0.05)
@@ -820,13 +1500,15 @@ with tab_gen:
             raw_df = append_user_info(generate_raw_synthetic(rows, non_bank_ratio))
             st.session_state.synthetic_raw_df = raw_df
             raw_path = save_to_runs(raw_df, "synthetic_raw")
-            st.success(f"Generated RAW (PII) dataset with {rows} rows in {st.session_state['currency_label']}. Saved to {raw_path}")
+            st.success(
+                f"Generated RAW (PII) dataset with {rows} rows in {st.session_state['currency_label']}. Saved to {raw_path}"
+            )
             st.dataframe(raw_df.head(10), use_container_width=True)
             st.download_button(
                 "⬇️ Download RAW CSV",
                 raw_df.to_csv(index=False).encode("utf-8"),
                 os.path.basename(raw_path),
-                "text/csv"
+                "text/csv",
             )
 
     with colB:
@@ -834,27 +1516,27 @@ with tab_gen:
             anon_df = append_user_info(generate_anon_synthetic(rows, non_bank_ratio))
             st.session_state.synthetic_df = anon_df
             anon_path = save_to_runs(anon_df, "synthetic_anon")
-            st.success(f"Generated ANON dataset with {rows} rows in {st.session_state['currency_label']}. Saved to {anon_path}")
+            st.success(
+                f"Generated ANON dataset with {rows} rows in {st.session_state['currency_label']}. Saved to {anon_path}"
+            )
             st.dataframe(anon_df.head(10), use_container_width=True)
             st.download_button(
                 "⬇️ Download ANON CSV",
                 anon_df.to_csv(index=False).encode("utf-8"),
                 os.path.basename(anon_path),
-                "text/csv"
+                "text/csv",
             )
 
-# ─────────────────────────────────────────────
-# 🧹 TAB 2 — Anonymize & Sanitize Data
-with tab_clean:
-    st.subheader("🧹 Upload & Anonymize Customer Data (PII columns will be DROPPED)")
+    st.markdown("---")
+    st.subheader("🧹 Upload & Anonymize Customer Data")
     st.markdown("Upload your **real CSV**. We drop PII columns and scrub emails/phones in text fields.")
 
-    uploaded = st.file_uploader("Upload CSV file", type=["csv"])
+    uploaded = st.file_uploader("Upload CSV file", type=["csv"], key="data_stage_uploader")
     if uploaded:
         try:
             df = pd.read_csv(uploaded)
-        except Exception as e:
-            st.error(f"Could not read CSV: {e}")
+        except Exception as exc:
+            st.error(f"Could not read CSV: {exc}")
             st.stop()
 
         st.write("📊 Original Data Preview:")
@@ -875,183 +1557,351 @@ with tab_clean:
             "⬇️ Download Clean Data",
             sanitized.to_csv(index=False).encode("utf-8"),
             os.path.basename(fpath),
-            "text/csv"
+            "text/csv",
         )
     else:
         st.info("Choose a CSV to see the sanitize flow.", icon="ℹ️")
 
-# ─────────────────────────────────────────────
-# 🤖 TAB 3 — Credit appraisal by AI assistant
-with tab_run:
-    st.subheader("🤖 Credit appraisal by AI assistant")
+    st.stop()
 
-    if "asset_appraisal_result" not in st.session_state:
-        st.session_state["asset_appraisal_result"] = None
-    if "asset_verified_result" not in st.session_state:
-        st.session_state["asset_verified_result"] = None
+if workflow_stage == "kyc":
+    render_pipeline_hero("kyc")
 
-    st.markdown("### 🏠 Collateral Asset Workflow")
-    latest_asset_context = st.session_state.get("asset_verified_result") or st.session_state.get("asset_appraisal_result")
-    default_asset_id = (latest_asset_context or {}).get("asset_id", "")
-    if latest_asset_context:
+    st.title("🛂 KYC & Compliance Workbench")
+    st.caption("Capture applicant identity, perform sanctions checks, and feed compliance context downstream.")
+
+    nav_cols = st.columns([1, 1, 2, 1])
+    with nav_cols[0]:
+        if st.button("⬅️ Back to Data Stage", key="btn_back_data_from_kyc"):
+            st.session_state.workflow_stage = "data"
+            st.rerun()
+    with nav_cols[1]:
+        if st.button("🏛️ Continue to Asset Stage", key="btn_forward_asset_from_kyc"):
+            st.session_state.workflow_stage = "asset"
+            st.rerun()
+    with nav_cols[3]:
+        if st.button("🚪 Logout", key="btn_logout_kyc_stage"):
+            logout_user()
+            st.rerun()
+
+    st.text_input("Session User", value=user_name, disabled=True)
+    st.text_input("Session Email", value=user_email, disabled=True)
+
+    flagged = st.toggle("Flag this session for manual review", value=flag_session, key="kyc_flag_toggle_stage")
+    st.session_state.user_info["flagged"] = flagged
+    flag_session = flagged
+    st.session_state.user_info.setdefault("timestamp", datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+
+    if st.button("🔁 Refresh Synthetic KYC Dossier", key="btn_refresh_kyc_stage"):
+        build_session_kyc_registry(force=True)
+        st.success("Synthetic KYC dossier refreshed from the latest loan book inputs.")
+        st.rerun()
+
+    kyc_df = build_session_kyc_registry()
+    if isinstance(kyc_df, pd.DataFrame) and not kyc_df.empty:
+        ready_df = st.session_state.get("kyc_registry_ready")
+        generated_at = st.session_state.get("kyc_registry_generated_at") or datetime.datetime.now().strftime(
+            "%Y-%m-%d %H:%M:%S"
+        )
+        total_profiles = len(kyc_df)
+        cleared = int((kyc_df.get("kyc_status", pd.Series(dtype=str)).astype(str) == "Cleared").sum())
+        enhanced = int((kyc_df.get("kyc_status", pd.Series(dtype=str)).astype(str) == "Enhanced Due Diligence").sum())
+        pending_docs = int((kyc_df.get("kyc_status", pd.Series(dtype=str)).astype(str) == "Pending Docs").sum())
+        high_risk = int(kyc_df.get("aml_risk", pd.Series(dtype=str)).isin(["High", "Critical"]).sum())
+        pep_matches = int((kyc_df.get("pep_status", pd.Series(dtype=str)).astype(str) != "No match").sum())
+        watch_series = kyc_df.get("watchlist_hits")
+        watch_total = int(watch_series.sum()) if isinstance(watch_series, pd.Series) else 0
+
         try:
-            est_value = float(latest_asset_context.get("estimated_value", 0) or 0.0)
-            confidence_pct = float(latest_asset_context.get("confidence", 0) or 0.0) * 100.0
+            due_soon = int(
+                pd.to_datetime(kyc_df.get("next_refresh_due"), errors="coerce")
+                .lt(datetime.datetime.now() + datetime.timedelta(days=30))
+                .sum()
+            )
         except Exception:
-            est_value = 0.0
-            confidence_pct = 0.0
-        st.info(
-            f"Latest asset valuation: **{latest_asset_context.get('asset_type', 'Asset')}** — "
-            f"ID `{default_asset_id}` — Estimated value ${est_value:,.0f} "
-            f"(confidence {confidence_pct:.1f}% ).",
-            icon="🏠",
+            due_soon = 0
+
+        badge_high = "kyc-badge kyc-badge--alert" if high_risk else "kyc-badge"
+        badge_pep = "kyc-badge kyc-badge--warning" if pep_matches else "kyc-badge"
+        badge_docs = "kyc-badge kyc-badge--warning" if pending_docs else "kyc-badge"
+
+        st.markdown(
+            f"""
+            <div class='kyc-panel'>
+                <div class='kyc-panel__title'>KYC Control Center</div>
+                <div class='kyc-panel__subtitle'>Synthetic dossier ready for collateral and credit review · Last refresh {generated_at}</div>
+                <div class='kyc-grid'>
+                    <div class='kyc-card'>
+                        <div class='kyc-card__label'>Profiles in scope</div>
+                        <div class='kyc-card__value'>{total_profiles}</div>
+                        <div class='kyc-card__note'>Cleared {cleared} · Enhanced DD {enhanced}</div>
+                    </div>
+                    <div class='kyc-card'>
+                        <div class='kyc-card__label'>AML risk</div>
+                        <div class='kyc-card__value'>{high_risk}</div>
+                        <div class='kyc-card__note'>High or critical AML profiles</div>
+                    </div>
+                    <div class='kyc-card'>
+                        <div class='kyc-card__label'>PEP matches</div>
+                        <div class='kyc-card__value'>{pep_matches}</div>
+                        <div class='kyc-card__note'>Politically exposed persons flagged</div>
+                    </div>
+                    <div class='kyc-card'>
+                        <div class='kyc-card__label'>Watchlist hits</div>
+                        <div class='kyc-card__value'>{watch_total}</div>
+                        <div class='kyc-card__note'>Matches across sanctions datasets</div>
+                    </div>
+                </div>
+                <div class='kyc-panel__metrics'>
+                    <span class='{badge_high}'>High AML risk: {high_risk}</span>
+                    <span class='{badge_pep}'>PEP matches: {pep_matches}</span>
+                    <span class='{badge_docs}'>Pending documentation: {pending_docs}</span>
+                    <span class='kyc-badge'>Refresh due ≤30d: {due_soon}</span>
+                </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
         )
 
-    with st.expander("🏠 Asset Appraisal Agent", expanded=False):
-        asset_type = st.selectbox(
-            "Asset Type",
-            ["Real Estate", "Vehicle", "Equipment", "Other"],
-            key="asset_type_selector",
-        )
-        declared_value = st.number_input(
-            "Declared Asset Value",
-            min_value=0.0,
-            step=1000.0,
-            help="Optional declared value from borrower.",
-        )
-        asset_notes = st.text_area(
-            "Asset Notes",
-            "",
-            help="Add contextual notes for the asset appraisal.",
-        )
-        uploaded_docs = st.file_uploader(
-            "Upload Documents / Photos",
-            accept_multiple_files=True,
-            key="asset_docs_uploader",
-        )
-        metadata: Dict[str, Any] = {"notes": asset_notes}
-        if declared_value:
-            metadata["declared_value"] = declared_value
-        if uploaded_docs:
-            metadata["files"] = [doc.name for doc in uploaded_docs]
+        st.markdown("#### 📄 Synthetic KYC Registry Preview")
+        st.dataframe(kyc_df.head(15), use_container_width=True)
 
-        if st.button("Run Asset Appraisal", key="asset_appraisal_run_btn"):
-            try:
-                payload = {
-                    "asset_type": asset_type,
-                    "metadata": json.dumps({k: v for k, v in metadata.items() if v not in (None, "", [])}),
-                }
-                resp = requests.post(
-                    f"{API_URL}/v1/agents/asset_appraisal/run",
-                    data=payload,
-                    timeout=30,
+        if isinstance(ready_df, pd.DataFrame) and not ready_df.empty:
+            st.markdown("#### 📥 Anonymized KYC (credit-ready)")
+            st.dataframe(ready_df.head(15), use_container_width=True)
+            ready_path = st.session_state.get("kyc_registry_ready_path")
+            if ready_path:
+                st.download_button(
+                    "⬇️ Download anonymized KYC CSV",
+                    ready_df.to_csv(index=False).encode("utf-8"),
+                    os.path.basename(ready_path),
+                    "text/csv",
                 )
-                resp.raise_for_status()
-                result = resp.json().get("result")
-                st.session_state["asset_appraisal_result"] = result
-                st.session_state["asset_verified_result"] = None
-                st.success("Asset appraisal completed.")
-                st.json(result)
-                default_asset_id = result.get("asset_id", "") if result else ""
-                latest_asset_context = result
-            except Exception as exc:
-                st.error(f"Asset appraisal failed: {exc}")
+        else:
+            st.info("Refresh the synthetic KYC dossier to generate anonymized records for downstream stages.")
+    else:
+        st.warning("Generate or refresh the KYC dossier to move collateral assets into review.")
 
-    with st.expander("🕵️ Bank Inspector Verification", expanded=False):
-        verify_asset_id = st.text_input(
-            "Asset ID",
-            value=default_asset_id,
-            key="asset_verify_id",
+    st.stop()
+
+if workflow_stage == "asset":
+    render_pipeline_hero("asset")
+
+    st.title("🏛️ Collateral Asset Platform")
+    st.caption("Verify collateral assets in batch before running the credit appraisal agent.")
+
+    nav_cols = st.columns([1, 1, 1, 1])
+    with nav_cols[0]:
+        if st.button("⬅️ Back to KYC", key="btn_back_to_kyc_from_asset"):
+            st.session_state.workflow_stage = "kyc"
+            st.rerun()
+    with nav_cols[1]:
+        if st.button("🏠 Home", key="btn_home_asset"):
+            go_to_public_home(clear_user=False)
+            st.rerun()
+    with nav_cols[2]:
+        if st.button("➡️ Continue to Credit", key="btn_to_credit_stage"):
+            collateral_df = st.session_state.get("asset_collateral_df")
+            if collateral_df is None or getattr(collateral_df, "empty", True):
+                st.warning("Generate a collateral verification report before continuing to credit decisions.")
+            else:
+                st.session_state.workflow_stage = "credit"
+                st.rerun()
+    with nav_cols[3]:
+        if st.button("🚪 Logout", key="btn_logout_asset"):
+            logout_user()
+            st.rerun()
+
+    st.markdown(f"👤 **User:** {user_name or 'Unknown'} · ✉️ {user_email or '—'}")
+
+    collateral_df = st.session_state.get("asset_collateral_df")
+    collateral_path = st.session_state.get("asset_collateral_path")
+    if isinstance(collateral_df, pd.DataFrame) and not collateral_df.empty:
+        verified_count = int(collateral_df.get("collateral_verified", pd.Series(dtype=bool)).fillna(False).sum())
+        total_loans = len(collateral_df)
+        waiting = total_loans - verified_count
+        saved_name = os.path.basename(collateral_path) if collateral_path else None
+        msg = f"Latest collateral report: **{verified_count} verified** / {waiting} waiting (total {total_loans})."
+        if saved_name:
+            msg += f" Saved as `{saved_name}`."
+        credit_saved = st.session_state.get("asset_collateral_credit_path")
+        if credit_saved:
+            msg += f" Credit-ready CSV `{os.path.basename(credit_saved)}` prepared."
+        st.success(msg)
+        with st.expander("View latest collateral verification", expanded=False):
+            st.dataframe(collateral_df.head(25), use_container_width=True)
+    else:
+        st.info("Run the asset appraisal agent across your loan book to unlock the credit stage.", icon="ℹ️")
+
+    st.markdown("### 🔍 Batch collateral verification")
+    st.caption("Select a dataset, call the asset appraisal agent for each collateral, and export a verification CSV.")
+
+    data_options = [
+        "Use synthetic (ANON)",
+        "Use synthetic (RAW – auto-sanitize)",
+        "Use anonymized dataset",
+        "Upload manually",
+    ]
+    data_choice = st.selectbox("Collateral data source", data_options, key="asset_data_choice")
+
+    if data_choice == "Upload manually":
+        uploaded = st.file_uploader(
+            "Upload CSV for collateral verification",
+            type=["csv"],
+            key="asset_manual_upload",
         )
-        verified_flag = st.checkbox(
-            "Legitimacy Verified",
-            value=True,
-            key="asset_verify_flag",
-        )
-        legitimacy_score = st.slider(
-            "Legitimacy Score",
-            0.0,
-            1.0,
-            0.95,
+        if uploaded is not None:
+            st.session_state["manual_upload_name"] = uploaded.name
+            st.session_state["manual_upload_bytes"] = uploaded.getvalue()
+            st.success(f"Staged `{uploaded.name}` for collateral verification.")
+
+    dataset_preview = resolve_dataset_choice(data_choice)
+    if dataset_preview is not None and not dataset_preview.empty:
+        with st.expander("Preview selected dataset", expanded=False):
+            st.dataframe(dataset_preview.head(10), use_container_width=True)
+    else:
+        st.info("Select or generate a dataset to begin collateral verification.", icon="ℹ️")
+
+    col_conf, col_ratio = st.columns(2)
+    with col_conf:
+        confidence_threshold = st.slider(
+            "Minimum confidence from asset agent",
+            0.50,
+            1.00,
+            0.88,
             0.01,
         )
-        inspector_notes = st.text_area(
-            "Inspector Notes",
-            "Land title confirmed by local authority.",
-        )
-        local_ref = st.text_input("Local Authority Reference", "")
-
-        if st.button("Submit Verification", key="asset_submit_verification"):
-            try:
-                data = {
-                    "asset_id": verify_asset_id,
-                    "verified": str(verified_flag).lower(),
-                    "legitimacy_score": legitimacy_score,
-                    "inspector_notes": inspector_notes,
-                    "local_authority_ref": local_ref,
-                }
-                resp = requests.post(
-                    f"{API_URL}/v1/agents/asset_appraisal/verify",
-                    data=data,
-                    timeout=30,
-                )
-                resp.raise_for_status()
-                result = resp.json().get("result")
-                st.session_state["asset_verified_result"] = result
-                st.success("Verification recorded and asset valuation updated.")
-                st.json(result)
-                latest_asset_context = result
-                default_asset_id = result.get("asset_id", verify_asset_id) if result else verify_asset_id
-            except Exception as exc:
-                st.error(f"Failed to submit verification: {exc}")
-
-    with st.expander("📱 Field Data Upload", expanded=False):
-        field_asset_id = st.text_input(
-            "Asset ID",
-            value=default_asset_id,
-            key="field_asset_id",
-        )
-        inspector_name = st.text_input(
-            "Inspector Name",
-            value="",
-            key="field_inspector_name",
-        )
-        latitude = st.number_input("Latitude", value=0.0, format="%.6f")
-        longitude = st.number_input("Longitude", value=0.0, format="%.6f")
-        field_notes = st.text_area("Field Notes", "")
-        photo_upload = st.file_uploader(
-            "Photo Evidence",
-            type=["jpg", "jpeg", "png"],
-            key="field_photo",
+    with col_ratio:
+        value_ratio = st.slider(
+            "Min estimated collateral vs. loan ratio",
+            0.10,
+            1.50,
+            0.80,
+            0.05,
+            help="If loan amount is missing the threshold is applied to declared collateral value.",
         )
 
-        if st.button("Upload Field Data", key="field_upload_btn"):
-            try:
-                data = {
-                    "asset_id": field_asset_id,
-                    "latitude": latitude,
-                    "longitude": longitude,
-                    "inspector_name": inspector_name,
-                    "notes": field_notes,
-                }
-                request_kwargs: Dict[str, Any] = {"data": data, "timeout": 30}
-                if photo_upload is not None:
-                    request_kwargs["files"] = {
-                        "photo": (
-                            photo_upload.name,
-                            photo_upload.getvalue(),
-                            photo_upload.type or "application/octet-stream",
+    run_report = st.button("🛡️ Generate collateral verification report", use_container_width=True)
+
+    if run_report:
+        dataset = dataset_preview
+        if dataset is None or dataset.empty:
+            st.warning("No dataset available. Generate synthetic data or upload a CSV first.")
+        else:
+            required_cols = {"application_id", "collateral_type", "collateral_value"}
+            missing = [c for c in required_cols if c not in dataset.columns]
+            if missing:
+                st.error("Dataset is missing required columns: " + ", ".join(sorted(missing)))
+            else:
+                with st.spinner("Running asset appraisal agent across collateral records..."):
+                    report_df, errors = build_collateral_report(
+                        dataset,
+                        confidence_threshold=confidence_threshold,
+                        value_ratio=value_ratio,
+                    )
+                if report_df.empty:
+                    st.warning("No collateral rows were processed. Check the dataset contents.")
+                else:
+                    st.session_state["asset_collateral_df"] = report_df
+                    report_with_user = append_user_info(report_df)
+                    path = save_to_runs(report_with_user, "collateral_verification")
+                    st.session_state["asset_collateral_path"] = path
+                    saved_name = os.path.basename(path)
+                    st.success(
+                        f"Collateral verification complete — {len(report_df)} loans processed. Saved to `{saved_name}`."
+                    )
+                    credit_ready = sanitize_dataset(report_df)
+                    if {
+                        "collateral_status",
+                        "collateral_verified",
+                    } <= set(credit_ready.columns):
+                        verified_mask = credit_ready["collateral_verified"].fillna(False) == True
+                        credit_ready.loc[verified_mask, "collateral_status"] = "Verified"
+                        credit_ready.loc[~verified_mask, "collateral_status"] = "Failed"
+                    credit_ready = dedupe_columns(credit_ready)
+                    st.session_state["asset_verified_result"] = credit_ready
+                    credit_with_user = append_user_info(credit_ready)
+                    credit_path = save_to_runs(credit_with_user, "collateral_credit_ready")
+                    st.session_state["asset_collateral_credit_path"] = credit_path
+                    credit_name = os.path.basename(credit_path)
+                    st.info(
+                        "An anonymized credit-ready dataset with collateral status has been prepared for the next stage."
+                    )
+                    st.dataframe(report_df.head(25), use_container_width=True)
+                    st.download_button(
+                        "⬇️ Download collateral verification CSV",
+                        report_df.to_csv(index=False).encode("utf-8"),
+                        saved_name,
+                        "text/csv",
+                    )
+                    st.download_button(
+                        "⬇️ Download credit-ready (anonymized) CSV",
+                        credit_ready.to_csv(index=False).encode("utf-8"),
+                        credit_name,
+                        "text/csv",
+                    )
+                    if errors:
+                        st.warning(
+                            "Some rows could not be fully verified by the asset agent. "
+                            "See the reason column for details."
                         )
-                    }
-                resp = requests.post(
-                    f"{API_URL}/v1/agents/asset_appraisal/upload_field_data",
-                    **request_kwargs,
-                )
-                resp.raise_for_status()
-                st.success("Field data uploaded.")
-                st.json(resp.json())
-            except Exception as exc:
-                st.error(f"Failed to upload field data: {exc}")
+
+    st.stop()
+
+if workflow_stage == "credit":
+    render_pipeline_hero("credit")
+
+    user_display = f"👤 {user_name or 'Guest'} · ✉️ {user_email or '—'}"
+    if flag_session:
+        user_display += " · 🚩 Flagged"
+
+    nav_cols = st.columns([1, 1, 1, 1])
+    with nav_cols[0]:
+        if st.button("⬅️ Back to Collateral", key="btn_back_to_asset_from_credit"):
+            st.session_state.workflow_stage = "asset"
+            st.rerun()
+    with nav_cols[1]:
+        if st.button("🏠 Home", key="btn_home_credit"):
+            go_to_public_home(clear_user=False)
+            st.rerun()
+    with nav_cols[2]:
+        if st.button("➡️ Continue to Human Review", key="btn_to_review_stage"):
+            st.session_state.workflow_stage = "review"
+            st.rerun()
+    with nav_cols[3]:
+        if st.button("🚪 Logout", key="btn_logout_credit"):
+            logout_user()
+            st.rerun()
+
+    st.markdown(f"<div class='pipeline-user-tag'>{user_display}</div>", unsafe_allow_html=True)
+
+    collateral_df = st.session_state.get("asset_collateral_df")
+    collateral_ready_df = st.session_state.get("asset_verified_result")
+    kyc_ready_df = st.session_state.get("kyc_registry_ready")
+
+    if isinstance(collateral_df, pd.DataFrame) and not collateral_df.empty:
+        verified_count = int(collateral_df.get("collateral_verified", pd.Series(dtype=bool)).fillna(False).sum())
+        total_loans = len(collateral_df)
+        waiting = total_loans - verified_count
+        st.success(
+            f"Collateral verification ready: {verified_count} verified / {waiting} waiting (total {total_loans}).",
+            icon="🏦",
+        )
+        with st.expander("Collateral verification summary", expanded=False):
+            status_breakdown = (
+                collateral_df["collateral_status"].value_counts(dropna=False)
+                .rename_axis("Status")
+                .reset_index(name="Count")
+            )
+            st.dataframe(status_breakdown, use_container_width=True)
+        if st.button("Update collateral verification", key="btn_edit_asset_stage"):
+            st.session_state.workflow_stage = "asset"
+            st.rerun()
+    else:
+        st.warning("No collateral verification data available yet.", icon="⚠️")
+        if st.button("Go to Collateral Asset Stage", key="btn_to_asset_stage_from_credit"):
+            st.session_state.workflow_stage = "asset"
+            st.rerun()
 
     # Production model banner (optional)
     try:
@@ -1069,7 +1919,6 @@ with tab_run:
     except Exception:
         st.info("ℹ️ Production meta unavailable.")
 
-    # 1) Model + Hardware selection (UI hints)
     LLM_MODELS = [
         ("Phi-3 Mini (3.8B) — CPU OK", "phi3:3.8b", "CPU 8GB RAM (fast)"),
         ("Mistral 7B Instruct — CPU slow / GPU OK", "mistral:7b-instruct", "CPU 16GB (slow) or GPU ≥8GB"),
@@ -1083,11 +1932,11 @@ with tab_run:
     LLM_HINT_BY_LABEL = {l: h for (l, _, h) in LLM_MODELS}
 
     OPENSTACK_FLAVORS = {
-        "m4.medium":  "4 vCPU / 8 GB RAM — CPU-only small",
-        "m8.large":   "8 vCPU / 16 GB RAM — CPU-only medium",
-        "g1.a10.1":   "8 vCPU / 32 GB RAM + 1×A10 24GB",
-        "g1.l40.1":   "16 vCPU / 64 GB RAM + 1×L40 48GB",
-        "g2.a100.1":  "24 vCPU / 128 GB RAM + 1×A100 80GB",
+        "m4.medium": "4 vCPU / 8 GB RAM — CPU-only small",
+        "m8.large": "8 vCPU / 16 GB RAM — CPU-only medium",
+        "g1.a10.1": "8 vCPU / 32 GB RAM + 1×A10 24GB",
+        "g1.l40.1": "16 vCPU / 64 GB RAM + 1×L40 48GB",
+        "g2.a100.1": "24 vCPU / 128 GB RAM + 1×A100 80GB",
     }
 
     with st.expander("🧠 Local LLM & Hardware Profile", expanded=True):
@@ -1101,16 +1950,16 @@ with tab_run:
             st.caption(OPENSTACK_FLAVORS[flavor])
         st.caption("These are passed to the API as hints; your API can choose Ollama/Flowise backends accordingly.")
 
-    # 2) Data Source
-    data_choice = st.selectbox(
-        "Select Data Source",
-        [
-            "Use synthetic (ANON)",
-            "Use synthetic (RAW – auto-sanitize)",
-            "Use anonymized dataset",
-            "Upload manually",
-        ]
-    )
+    data_options = [
+        "Use synthetic (ANON)",
+        "Use synthetic (RAW – auto-sanitize)",
+        "Use anonymized dataset",
+        "Use collateral verification output",
+        "Use KYC registry (anonymized)",
+        "Upload manually",
+    ]
+    data_choice = st.selectbox("Select Data Source", data_options)
+
     use_llm = st.checkbox("Use LLM narrative", value=False)
     agent_name = "credit_appraisal"
 
@@ -1121,20 +1970,30 @@ with tab_run:
             st.session_state["manual_upload_bytes"] = up.getvalue()
             st.success(f"File staged: {up.name} ({len(st.session_state['manual_upload_bytes'])} bytes)")
 
-    # 3) Rules
     st.markdown("### ⚙️ Decision Rule Set")
     rule_mode = st.radio(
         "Choose rule mode",
         ["Classic (bank-style metrics)", "NDI (Net Disposable Income) — simple"],
         index=0,
-        help="NDI = income - all monthly obligations. Approve if NDI and NDI ratio pass thresholds."
+        help="NDI = income - all monthly obligations. Approve if NDI and NDI ratio pass thresholds.",
     )
 
     CLASSIC_DEFAULTS = {
-        "max_dti": 0.45, "min_emp_years": 2, "min_credit_hist": 3, "salary_floor": 3000,
-        "max_delinquencies": 2, "max_current_loans": 3, "req_min": 1000, "req_max": 200000,
-        "loan_terms": [12, 24, 36, 48, 60], "threshold": 0.45, "target_rate": None, "random_band": True,
-        "min_income_debt_ratio": 0.35, "compounded_debt_factor": 1.0, "monthly_debt_relief": 0.50,
+        "max_dti": 0.45,
+        "min_emp_years": 2,
+        "min_credit_hist": 3,
+        "salary_floor": 3000,
+        "max_delinquencies": 2,
+        "max_current_loans": 3,
+        "req_min": 1000,
+        "req_max": 200000,
+        "loan_terms": [12, 24, 36, 48, 60],
+        "threshold": 0.45,
+        "target_rate": None,
+        "random_band": True,
+        "min_income_debt_ratio": 0.35,
+        "compounded_debt_factor": 1.0,
+        "monthly_debt_relief": 0.50,
     }
     NDI_DEFAULTS = {"ndi_value": 800.0, "ndi_ratio": 0.50, "threshold": 0.45, "target_rate": None, "random_band": True}
 
@@ -1143,8 +2002,11 @@ with tab_run:
     if "ndi_rules" not in st.session_state:
         st.session_state.ndi_rules = NDI_DEFAULTS.copy()
 
-    def reset_classic(): st.session_state.classic_rules = CLASSIC_DEFAULTS.copy()
-    def reset_ndi():     st.session_state.ndi_rules = NDI_DEFAULTS.copy()
+    def reset_classic():
+        st.session_state.classic_rules = CLASSIC_DEFAULTS.copy()
+
+    def reset_ndi():
+        st.session_state.ndi_rules = NDI_DEFAULTS.copy()
 
     if rule_mode.startswith("Classic"):
         with st.expander("Classic Metrics (with Reset)", expanded=True):
@@ -1155,25 +2017,50 @@ with tab_run:
                 rc["min_emp_years"] = st.number_input("Min Employment Years", 0, 40, rc["min_emp_years"])
                 rc["min_credit_hist"] = st.number_input("Min Credit History (years)", 0, 40, rc["min_credit_hist"])
             with r2:
-                rc["salary_floor"] = st.number_input("Minimum Monthly Salary", 0, 1_000_000_000, rc["salary_floor"], step=1000, help=fmt_currency_label("in local currency"))
+                rc["salary_floor"] = st.number_input(
+                    "Minimum Monthly Salary",
+                    0,
+                    1_000_000_000,
+                    rc["salary_floor"],
+                    step=1000,
+                    help=fmt_currency_label("in local currency"),
+                )
                 rc["max_delinquencies"] = st.number_input("Max Delinquencies", 0, 10, rc["max_delinquencies"])
                 rc["max_current_loans"] = st.number_input("Max Current Loans", 0, 10, rc["max_current_loans"])
             with r3:
-                rc["req_min"] = st.number_input(fmt_currency_label("Requested Amount Min"), 0, 10_000_000_000, rc["req_min"], step=1000)
-                rc["req_max"] = st.number_input(fmt_currency_label("Requested Amount Max"), 0, 10_000_000_000, rc["req_max"], step=1000)
-                rc["loan_terms"] = st.multiselect("Allowed Loan Terms (months)", [12,24,36,48,60,72], default=rc["loan_terms"])
+                rc["req_min"] = st.number_input(
+                    fmt_currency_label("Requested Amount Min"),
+                    0,
+                    10_000_000_000,
+                    rc["req_min"],
+                    step=1000,
+                )
+                rc["req_max"] = st.number_input(
+                    fmt_currency_label("Requested Amount Max"),
+                    0,
+                    10_000_000_000,
+                    rc["req_max"],
+                    step=1000,
+                )
+                rc["loan_terms"] = st.multiselect("Allowed Loan Terms (months)", [12, 24, 36, 48, 60, 72], default=rc["loan_terms"])
 
             st.markdown("#### 🧮 Debt Pressure Controls")
             d1, d2, d3 = st.columns(3)
             with d1:
-                rc["min_income_debt_ratio"] = st.slider("Min Income / (Compounded Debt) Ratio", 0.10, 2.00, rc["min_income_debt_ratio"], 0.01)
+                rc["min_income_debt_ratio"] = st.slider(
+                    "Min Income / (Compounded Debt) Ratio", 0.10, 2.00, rc["min_income_debt_ratio"], 0.01
+                )
             with d2:
-                rc["compounded_debt_factor"] = st.slider("Compounded Debt Factor (× requested)", 0.5, 3.0, rc["compounded_debt_factor"], 0.1)
+                rc["compounded_debt_factor"] = st.slider(
+                    "Compounded Debt Factor (× requested)", 0.5, 3.0, rc["compounded_debt_factor"], 0.1
+                )
             with d3:
-                rc["monthly_debt_relief"] = st.slider("Monthly Debt Relief Factor", 0.10, 1.00, rc["monthly_debt_relief"], 0.05)
+                rc["monthly_debt_relief"] = st.slider(
+                    "Monthly Debt Relief Factor", 0.10, 1.00, rc["monthly_debt_relief"], 0.05
+                )
 
             st.markdown("---")
-            c1, c2, c3 = st.columns([1,1,1])
+            c1, c2, c3 = st.columns([1, 1, 1])
             with c1:
                 use_target = st.toggle("🎯 Use target approval rate", value=(rc["target_rate"] is not None))
             with c2:
@@ -1194,13 +2081,19 @@ with tab_run:
             rn = st.session_state.ndi_rules
             n1, n2 = st.columns(2)
             with n1:
-                rn["ndi_value"] = st.number_input(fmt_currency_label("Min NDI (Net Disposable Income) per month"), 0.0, 1e12, float(rn["ndi_value"]), step=50.0)
+                rn["ndi_value"] = st.number_input(
+                    fmt_currency_label("Min NDI (Net Disposable Income) per month"),
+                    0.0,
+                    1e12,
+                    float(rn["ndi_value"]),
+                    step=50.0,
+                )
             with n2:
                 rn["ndi_ratio"] = st.slider("Min NDI / Income ratio", 0.0, 1.0, float(rn["ndi_ratio"]), 0.01)
             st.caption("NDI = income - all monthly obligations (rent, food, loans, cards, etc.).")
 
             st.markdown("---")
-            c1, c2, c3 = st.columns([1,1,1])
+            c1, c2, c3 = st.columns([1, 1, 1])
             with c1:
                 use_target = st.toggle("🎯 Use target approval rate", value=(rn["target_rate"] is not None))
             with c2:
@@ -1217,7 +2110,6 @@ with tab_run:
                 rn["threshold"] = st.slider("Model score threshold", 0.0, 1.0, rn["threshold"], 0.01)
                 rn["target_rate"] = None
 
-    # 4) Run
     if st.button("🚀 Run Agent", use_container_width=True):
         try:
             files = None
@@ -1272,55 +2164,70 @@ with tab_run:
 
             if data_choice == "Use synthetic (ANON)":
                 if "synthetic_df" not in st.session_state:
-                    st.warning("No ANON synthetic dataset found. Generate it in the first tab."); st.stop()
+                    st.warning("No ANON synthetic dataset found. Generate it in the data stage.")
+                    st.stop()
                 files = prep_and_pack(st.session_state.synthetic_df, "synthetic_anon.csv")
-
             elif data_choice == "Use synthetic (RAW – auto-sanitize)":
                 if "synthetic_raw_df" not in st.session_state:
-                    st.warning("No RAW synthetic dataset found. Generate it in the first tab."); st.stop()
+                    st.warning("No RAW synthetic dataset found. Generate it in the data stage.")
+                    st.stop()
                 files = prep_and_pack(st.session_state.synthetic_raw_df, "synthetic_raw_sanitized.csv")
-
             elif data_choice == "Use anonymized dataset":
                 if "anonymized_df" not in st.session_state:
-                    st.warning("No anonymized dataset found. Create it in the second tab."); st.stop()
+                    st.warning("No anonymized dataset found. Create it in the data stage.")
+                    st.stop()
                 files = prep_and_pack(st.session_state.anonymized_df, "anonymized.csv")
-
+            elif data_choice == "Use collateral verification output":
+                if "asset_verified_result" not in st.session_state or st.session_state["asset_verified_result"] is None:
+                    st.warning("No collateral verification output found. Run the asset stage first.")
+                    st.stop()
+                files = prep_and_pack(st.session_state.get("asset_verified_result"), "collateral_credit_ready.csv")
+            elif data_choice == "Use KYC registry (anonymized)":
+                if "kyc_registry_ready" not in st.session_state or st.session_state["kyc_registry_ready"] is None:
+                    st.warning("Generate the synthetic KYC dossier in the KYC stage first.")
+                    st.stop()
+                files = prep_and_pack(st.session_state.get("kyc_registry_ready"), "kyc_registry_ready.csv")
             elif data_choice == "Upload manually":
                 up_name = st.session_state.get("manual_upload_name")
                 up_bytes = st.session_state.get("manual_upload_bytes")
                 if not up_name or not up_bytes:
-                    st.warning("Please upload a CSV first."); st.stop()
+                    st.warning("Please upload a CSV first.")
+                    st.stop()
                 try:
                     tmp_df = pd.read_csv(io.BytesIO(up_bytes))
                     files = prep_and_pack(tmp_df, up_name)
                 except Exception:
                     files = {"file": (up_name, up_bytes, "text/csv")}
             else:
-                st.error("Unknown data source selection."); st.stop()
+                st.error("Unknown data source selection.")
+                st.stop()
 
             r = requests.post(f"{API_URL}/v1/agents/{agent_name}/run", data=data, files=files, timeout=180)
             if r.status_code != 200:
-                st.error(f"Run failed ({r.status_code}): {r.text}"); st.stop()
+                st.error(f"Run failed ({r.status_code}): {r.text}")
+                st.stop()
 
             res = r.json()
             st.session_state.last_run_id = res.get("run_id")
             result = res.get("result", {}) or {}
             st.success(f"✅ Run succeeded! Run ID: {st.session_state.last_run_id}")
 
-            # Pull merged.csv for dashboards/review
             rid = st.session_state.last_run_id
             merged_url = f"{API_URL}/v1/runs/{rid}/report?format=csv"
             merged_bytes = requests.get(merged_url, timeout=30).content
             merged_df = pd.read_csv(io.BytesIO(merged_bytes))
             st.session_state["last_merged_df"] = merged_df
 
-            # Export AI outputs as csv with currency code (for Human Review dropdown)
             ts = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
             out_name = f"ai-appraisal-outputs-{ts}-{st.session_state['currency_code']}.csv"
-            st.download_button("⬇️ Download AI outputs (CSV)", merged_df.to_csv(index=False).encode("utf-8"), out_name, "text/csv")
+            st.download_button(
+                "⬇️ Download AI outputs (CSV)",
+                merged_df.to_csv(index=False).encode("utf-8"),
+                out_name,
+                "text/csv",
+            )
 
-            # Decision filter IN TABLE (not hiding dashboard)
-            st.markdown("### 📄 Credit Ai Agent  Decisions Table (filtered)")
+            st.markdown("### 📄 Credit AI Agent Decisions Table (filtered)")
             uniq_dec = sorted([d for d in merged_df.get("decision", pd.Series(dtype=str)).dropna().unique()])
             chosen = st.multiselect("Filter decision", options=uniq_dec, default=uniq_dec, key="filter_decisions")
             df_view = merged_df.copy()
@@ -1328,119 +2235,188 @@ with tab_run:
                 df_view = df_view[df_view["decision"].isin(chosen)]
             st.dataframe(df_view, use_container_width=True)
 
-            # ── DASHBOARD (always visible; filters apply in table below)
             st.markdown("## 📊 Dashboard")
             render_credit_dashboard(merged_df, st.session_state.get("currency_symbol", ""))
 
-            # Per-row metrics met/not met
             if "rule_reasons" in df_view.columns:
                 rr = df_view["rule_reasons"].apply(try_json)
-                df_view["metrics_met"] = rr.apply(lambda d: ", ".join(sorted([k for k, v in (d or {}).items() if v is True])) if isinstance(d, dict) else "")
-                df_view["metrics_unmet"] = rr.apply(lambda d: ", ".join(sorted([k for k, v in (d or {}).items() if v is False])) if isinstance(d, dict) else "")
-            cols_show = [c for c in [
-                "application_id","customer_type","decision","score","loan_amount","income","metrics_met","metrics_unmet",
-                "proposed_loan_option","proposed_consolidation_loan","top_feature","explanation"
-            ] if c in df_view.columns]
+                df_view["metrics_met"] = rr.apply(
+                    lambda d: ", ".join(sorted([k for k, v in (d or {}).items() if v is True])) if isinstance(d, dict) else ""
+                )
+                df_view["metrics_unmet"] = rr.apply(
+                    lambda d: ", ".join(sorted([k for k, v in (d or {}).items() if v is False])) if isinstance(d, dict) else ""
+                )
+            cols_show = [
+                c
+                for c in [
+                    "application_id",
+                    "customer_type",
+                    "decision",
+                    "score",
+                    "loan_amount",
+                    "income",
+                    "metrics_met",
+                    "metrics_unmet",
+                    "proposed_loan_option",
+                    "proposed_consolidation_loan",
+                    "top_feature",
+                    "explanation",
+                ]
+                if c in df_view.columns
+            ]
             st.dataframe(df_view[cols_show].head(500), use_container_width=True)
 
-            # Downloads
             cdl1, cdl2, cdl3, cdl4, cdl5 = st.columns(5)
-            with cdl1: st.markdown(f"[⬇️ PDF report]({API_URL}/v1/runs/{rid}/report?format=pdf)")
-            with cdl2: st.markdown(f"[⬇️ Scores CSV]({API_URL}/v1/runs/{rid}/report?format=scores_csv)")
-            with cdl3: st.markdown(f"[⬇️ Explanations CSV]({API_URL}/v1/runs/{rid}/report?format=explanations_csv)")
-            with cdl4: st.markdown(f"[⬇️ Merged CSV]({API_URL}/v1/runs/{rid}/report?format=csv)")
-            with cdl5: st.markdown(f"[⬇️ JSON]({API_URL}/v1/runs/{rid}/report?format=json)")
+            with cdl1:
+                st.markdown(f"[⬇️ PDF report]({API_URL}/v1/runs/{rid}/report?format=pdf)")
+            with cdl2:
+                st.markdown(f"[⬇️ Scores CSV]({API_URL}/v1/runs/{rid}/report?format=scores_csv)")
+            with cdl3:
+                st.markdown(f"[⬇️ Explanations CSV]({API_URL}/v1/runs/{rid}/report?format=explanations_csv)")
+            with cdl4:
+                st.markdown(f"[⬇️ Merged CSV]({API_URL}/v1/runs/{rid}/report?format=csv)")
+            with cdl5:
+                st.markdown(f"[⬇️ JSON]({API_URL}/v1/runs/{rid}/report?format=json)")
 
-        except Exception as e:
-            st.exception(e)
+        except Exception as exc:
+            st.exception(exc)
 
-    # Re-download quick section
     if st.session_state.get("last_run_id"):
         st.markdown("---")
         st.subheader("📥 Download Latest Outputs")
         rid = st.session_state.last_run_id
         col1, col2, col3, col4, col5 = st.columns(5)
-        with col1: st.markdown(f"[⬇️ PDF]({API_URL}/v1/runs/{rid}/report?format=pdf)")
-        with col2: st.markdown(f"[⬇️ Scores CSV]({API_URL}/v1/runs/{rid}/report?format=scores_csv)")
-        with col3: st.markdown(f"[⬇️ Explanations CSV]({API_URL}/v1/runs/{rid}/report?format=explanations_csv)")
-        with col4: st.markdown(f"[⬇️ Merged CSV]({API_URL}/v1/runs/{rid}/report?format=csv)")
-        with col5: st.markdown(f"[⬇️ JSON]({API_URL}/v1/runs/{rid}/report?format=json)")
+        with col1:
+            st.markdown(f"[⬇️ PDF]({API_URL}/v1/runs/{rid}/report?format=pdf)")
+        with col2:
+            st.markdown(f"[⬇️ Scores CSV]({API_URL}/v1/runs/{rid}/report?format=scores_csv)")
+        with col3:
+            st.markdown(f"[⬇️ Explanations CSV]({API_URL}/v1/runs/{rid}/report?format=explanations_csv)")
+        with col4:
+            st.markdown(f"[⬇️ Merged CSV]({API_URL}/v1/runs/{rid}/report?format=csv)")
+        with col5:
+            st.markdown(f"[⬇️ JSON]({API_URL}/v1/runs/{rid}/report?format=json)")
 
+    st.stop()
 
-# ─────────────────────────────────────────────
-# 🧑‍⚖️ TAB 4 — Human Review
-with tab_review:
-    st.subheader("🧑‍⚖️ Human Review — Correct AI Decisions & Score Agreement")
+if workflow_stage == "review":
+    render_pipeline_hero("review")
 
-    # Allow loading AI output CSV back into review via dropdown upload
-    uploaded_review = st.file_uploader("Load AI outputs CSV for review (optional)", type=["csv"], key="review_csv_loader")
+    st.title("🧑‍⚖️ Human Review")
+    st.caption("Audit AI outputs, adjust verdicts, and capture agreement metrics.")
+
+    nav_cols = st.columns([1, 1, 1, 1])
+    with nav_cols[0]:
+        if st.button("⬅️ Back to Credit", key="btn_back_to_credit_from_review"):
+            st.session_state.workflow_stage = "credit"
+            st.rerun()
+    with nav_cols[1]:
+        if st.button("🏠 Home", key="btn_home_review"):
+            go_to_public_home(clear_user=False)
+            st.rerun()
+    with nav_cols[2]:
+        if st.button("➡️ Continue to Training", key="btn_forward_training"):
+            st.session_state.workflow_stage = "training"
+            st.rerun()
+    with nav_cols[3]:
+        if st.button("🚪 Logout", key="btn_logout_review"):
+            logout_user()
+            st.rerun()
+
+    uploaded_review = st.file_uploader(
+        "Load AI outputs CSV for review (optional)", type=["csv"], key="review_csv_loader_stage"
+    )
     if uploaded_review is not None:
         try:
             st.session_state["last_merged_df"] = pd.read_csv(uploaded_review)
             st.success("Loaded review dataset from uploaded CSV.")
-        except Exception as e:
-            st.error(f"Could not read uploaded CSV: {e}")
+        except Exception as exc:
+            st.error(f"Could not read uploaded CSV: {exc}")
 
     if "last_merged_df" not in st.session_state:
-        st.info("Run the agent (previous tab) or upload an AI outputs CSV to load results for review.")
-    else:
-        dfm = st.session_state["last_merged_df"].copy()
-        st.markdown("#### 1) Select rows to review and correct")
+        st.info("Run the agent (credit stage) or upload an AI outputs CSV to load results for review.")
+        st.stop()
 
-        editable_cols = []
-        if "decision" in dfm.columns: editable_cols.append("decision")
-        if "rule_reasons" in dfm.columns: editable_cols.append("rule_reasons")
-        if "customer_type" in dfm.columns: editable_cols.append("customer_type")
+    dfm = st.session_state["last_merged_df"].copy()
+    st.markdown("#### 1) Select rows to review and correct")
 
-        editable = dfm[["application_id"] + editable_cols].copy()
-        editable.rename(columns={"decision": "ai_decision"}, inplace=True)
-        editable["human_decision"] = editable.get("ai_decision", "approved")
-        editable["human_rule_reasons"] = editable.get("rule_reasons", "")
+    editable_cols = []
+    if "decision" in dfm.columns:
+        editable_cols.append("decision")
+    if "rule_reasons" in dfm.columns:
+        editable_cols.append("rule_reasons")
+    if "customer_type" in dfm.columns:
+        editable_cols.append("customer_type")
 
-        edited = st.data_editor(
-            editable,
-            num_rows="dynamic",
-            use_container_width=True,
-            key="review_editor",
-            column_config={
-                "human_decision": st.column_config.SelectboxColumn(options=["approved", "denied"]),
-                "customer_type": st.column_config.SelectboxColumn(options=["bank", "non-bank"], disabled=True)
-            }
-        )
+    editable = dfm[["application_id"] + editable_cols].copy()
+    editable.rename(columns={"decision": "ai_decision"}, inplace=True)
+    editable["human_decision"] = editable.get("ai_decision", "approved")
+    editable["human_rule_reasons"] = editable.get("rule_reasons", "")
 
-        st.markdown("#### 2) Compute agreement score")
-        if st.button("Compute agreement score"):
-            if "ai_decision" in edited.columns and "human_decision" in edited.columns:
-                agree = (edited["ai_decision"] == edited["human_decision"]).astype(int)
-                score = float(agree.mean()) if len(agree) else 0.0
-                st.success(f"Agreement score (AI vs human): {score:.3f}")
-                st.session_state["last_agreement_score"] = score
-            else:
-                st.warning("Missing decision columns to compute score.")
+    edited = st.data_editor(
+        editable,
+        num_rows="dynamic",
+        use_container_width=True,
+        key="review_editor_stage",
+        column_config={
+            "human_decision": st.column_config.SelectboxColumn(options=["approved", "denied"]),
+            "customer_type": st.column_config.SelectboxColumn(options=["bank", "non-bank"], disabled=True),
+        },
+    )
 
-        # Export review CSV (manual loop into training)
-        st.markdown("#### 3) Export review CSV")
-        model_used = "production"  # if you track specific model names, set it here
-        ts = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
-        safe_user = st.session_state["user_info"]["name"].replace(" ", "").lower()
-        review_name = f"creditappraisal.{safe_user}.{model_used}.{ts}.csv"
-        csv_bytes = edited.to_csv(index=False).encode("utf-8")
-        st.download_button("⬇️ Export review CSV", csv_bytes, review_name, "text/csv")
-        st.caption(f"Saved file name pattern: **{review_name}**")
+    st.markdown("#### 2) Compute agreement score")
+    if st.button("Compute agreement score", key="btn_agreement_score"):
+        if "ai_decision" in edited.columns and "human_decision" in edited.columns:
+            agree = (edited["ai_decision"] == edited["human_decision"]).astype(int)
+            score = float(agree.mean()) if len(agree) else 0.0
+            st.success(f"Agreement score (AI vs human): {score:.3f}")
+            st.session_state["last_agreement_score"] = score
+        else:
+            st.warning("Missing decision columns to compute score.")
 
+    st.markdown("#### 3) Export review CSV")
+    model_used = "production"
+    ts = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+    safe_user = st.session_state["user_info"]["name"].replace(" ", "").lower()
+    review_name = f"creditappraisal.{safe_user}.{model_used}.{ts}.csv"
+    csv_bytes = edited.to_csv(index=False).encode("utf-8")
+    st.download_button("⬇️ Export review CSV", csv_bytes, review_name, "text/csv")
+    st.caption(f"Saved file name pattern: **{review_name}**")
 
-# ─────────────────────────────────────────────
-# 🔁 TAB 5 — Training (Feedback → Retrain)
-with tab_train:
-    st.subheader("🔁 Human Feedback → Retrain (new payload)")
+    st.stop()
 
-    st.markdown("**Drag & drop** one or more review CSVs exported from the Human Review tab.")
-    up_list = st.file_uploader("Upload feedback CSV(s)", type=["csv"], accept_multiple_files=True, key="train_feedback_uploader")
+if workflow_stage == "training":
+    render_pipeline_hero("training")
+
+    st.title("🔁 Training & Promotion")
+    st.caption("Loop curated feedback into retraining jobs and promote production-ready models.")
+
+    nav_cols = st.columns([1, 1, 1, 1])
+    with nav_cols[0]:
+        if st.button("⬅️ Back to Review", key="btn_back_to_review_from_training"):
+            st.session_state.workflow_stage = "review"
+            st.rerun()
+    with nav_cols[1]:
+        if st.button("🏠 Home", key="btn_home_training"):
+            go_to_public_home(clear_user=False)
+            st.rerun()
+    with nav_cols[2]:
+        if st.button("↩️ Back to Credit", key="btn_back_to_credit_loop"):
+            st.session_state.workflow_stage = "credit"
+            st.rerun()
+    with nav_cols[3]:
+        if st.button("🚪 Logout", key="btn_logout_training"):
+            logout_user()
+            st.rerun()
+
+    st.markdown("**Drag & drop** one or more review CSVs exported from the Human Review stage.")
+    up_list = st.file_uploader(
+        "Upload feedback CSV(s)", type=["csv"], accept_multiple_files=True, key="train_feedback_uploader_stage"
+    )
 
     staged_paths: List[str] = []
     if up_list:
         for up in up_list:
-            # stage to tmp_feedback dir
             dest = os.path.join(TMP_FEEDBACK_DIR, up.name)
             with open(dest, "wb") as f:
                 f.write(up.getvalue())
@@ -1448,7 +2424,6 @@ with tab_train:
         st.success(f"Staged {len(staged_paths)} feedback file(s) to {TMP_FEEDBACK_DIR}")
         st.write(staged_paths)
 
-    st.markdown("#### Launch Retrain")
     payload = {
         "feedback_csvs": staged_paths,
         "user_name": st.session_state["user_info"]["name"],
@@ -1457,7 +2432,7 @@ with tab_train:
     }
     st.code(json.dumps(payload, indent=2), language="json")
 
-    colA, colB = st.columns([1,1])
+    colA, colB = st.columns([1, 1])
     with colA:
         if st.button("🚀 Train candidate model"):
             try:
@@ -1467,15 +2442,15 @@ with tab_train:
                     st.session_state["last_train_job"] = r.json().get("job_id")
                 else:
                     st.error(r.text)
-            except Exception as e:
-                st.error(f"Train failed: {e}")
+            except Exception as exc:
+                st.error(f"Train failed: {exc}")
     with colB:
         if st.button("⬆️ Promote last candidate to PRODUCTION"):
             try:
                 r = requests.post(f"{API_URL}/v1/training/promote", timeout=30)
                 st.write(r.json() if r.ok else r.text)
-            except Exception as e:
-                st.error(f"Promote failed: {e}")
+            except Exception as exc:
+                st.error(f"Promote failed: {exc}")
 
     st.markdown("---")
     st.markdown("#### Production Model")
@@ -1485,5 +2460,9 @@ with tab_train:
             st.json(resp.json())
         else:
             st.info("No production model yet.")
-    except Exception as e:
-        st.warning(f"Could not load production meta: {e}")
+    except Exception as exc:
+        st.warning(f"Could not load production meta: {exc}")
+
+    st.stop()
+
+
