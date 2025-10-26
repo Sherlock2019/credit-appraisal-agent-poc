@@ -516,10 +516,21 @@ if flash_user:
 st.title("💳 AI Credit Appraisal Platform")
 st.caption("Generate, sanitize, and appraise credit with AI agent Power and Human Decisions  .")
 
-# Short aliases for backward compatibility
-user_name = st.session_state.user_info.get("name", "")
-user_email = st.session_state.user_info.get("email", "")
-flag_session = st.session_state.user_info.get("flagged", False)
+    st.markdown(
+        f"""
+        <div class='pipeline-hero'>
+            <div class='pipeline-hero__header'>
+                <div class='pipeline-hero__eyebrow'>Agent Workflow</div>
+                <h1>💳 AI Credit Appraisal Platform</h1>
+                <p>Generate, sanitize, and appraise credit with AI agent power and human decisions.</p>
+            </div>
+            <div class='pipeline-steps'>
+                {steps_html}
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
     c1, c2 = st.columns([1, 2])
     with c1:
@@ -593,6 +604,157 @@ flag_session = st.session_state.user_info.get("flagged", False)
         sanitized = append_user_info(sanitized)
         sanitized = dedupe_columns(sanitized)
         st.session_state.anonymized_df = sanitized
+
+def ensure_application_ids(df: pd.DataFrame) -> pd.DataFrame:
+    out = df.copy()
+    if "application_id" not in out.columns:
+        out["application_id"] = [f"APP_{i:04d}" for i in range(1, len(out) + 1)]
+    out["application_id"] = out["application_id"].astype(str)
+    return out
+
+def sanitize_dataset(df: pd.DataFrame) -> pd.DataFrame:
+    safe = dedupe_columns(df)
+    safe, _ = drop_pii_columns(safe)
+    safe = strip_policy_banned(safe)
+    safe = dedupe_columns(safe)
+    return ensure_application_ids(safe)
+
+def resolve_dataset_choice(choice: str, *, sanitize: bool = True) -> Optional[pd.DataFrame]:
+    df: Optional[pd.DataFrame] = None
+    if choice == "Use synthetic (ANON)":
+        df = st.session_state.get("synthetic_df")
+    elif choice == "Use synthetic (RAW – auto-sanitize)":
+        df = st.session_state.get("synthetic_raw_df")
+    elif choice == "Use anonymized dataset":
+        df = st.session_state.get("anonymized_df")
+    elif choice == "Use collateral verification output":
+        df = st.session_state.get("asset_verified_result") or st.session_state.get("asset_collateral_df")
+    elif choice == "Use KYC registry (anonymized)":
+        df = st.session_state.get("kyc_registry_ready")
+    elif choice == "Upload manually":
+        up_bytes = st.session_state.get("manual_upload_bytes")
+        if up_bytes:
+            try:
+                df = pd.read_csv(io.BytesIO(up_bytes))
+            except Exception:
+                df = None
+
+    if df is None:
+        return None
+
+    df = dedupe_columns(df)
+    if sanitize:
+        try:
+            df = sanitize_dataset(df)
+        except Exception:
+            df = ensure_application_ids(df)
+    else:
+        df = ensure_application_ids(df)
+    return df
+
+def build_collateral_report(
+    df: pd.DataFrame,
+    *,
+    confidence_threshold: float = 0.88,
+    value_ratio: float = 0.8,
+) -> tuple[pd.DataFrame, List[str]]:
+    if df is None or df.empty:
+        return pd.DataFrame(), []
+
+    records = df.to_dict(orient="records")
+    total = len(records)
+    progress = st.progress(0.0) if total > 1 else None
+    session = requests.Session()
+    rows: List[Dict[str, Any]] = []
+    errors: List[str] = []
+
+    for idx, record in enumerate(records, start=1):
+        asset_type = str(record.get("collateral_type") or "Collateral Asset")
+        declared_value = _to_float(record.get("collateral_value"), 0.0)
+        loan_amount = _to_float(record.get("loan_amount"), 0.0)
+        metadata = {
+            "application_id": record.get("application_id"),
+            "declared_value": declared_value,
+            "loan_amount": loan_amount,
+            "currency_code": record.get("currency_code") or st.session_state.get("currency_code"),
+        }
+
+        payload = {"asset_type": asset_type, "metadata": json.dumps(metadata, default=str)}
+
+        estimated_value = declared_value
+        confidence = 0.0
+        asset_result: Dict[str, Any] = {}
+        error_message = ""
+
+        try:
+            response = session.post(
+                f"{API_URL}/v1/agents/asset_appraisal/run",
+                data=payload,
+                timeout=30,
+            )
+            response.raise_for_status()
+            asset_result = response.json().get("result", {}) or {}
+            estimated_value = _to_float(asset_result.get("estimated_value"), declared_value)
+            confidence = _to_float(asset_result.get("confidence"), 0.0)
+        except Exception as exc:  # pragma: no cover - defensive
+            error_message = str(exc)
+            errors.append(error_message)
+
+        value_threshold = 0.0
+        if loan_amount:
+            value_threshold = loan_amount * value_ratio
+        elif declared_value:
+            value_threshold = declared_value * value_ratio
+
+        reasons: List[str] = []
+        meets_confidence = confidence >= confidence_threshold
+        meets_value = True if value_threshold == 0 else estimated_value >= value_threshold
+
+        if not meets_confidence:
+            reasons.append(
+                f"Confidence {confidence:.2f} below threshold {confidence_threshold:.2f}"
+            )
+        if not meets_value:
+            if loan_amount:
+                reasons.append(
+                    f"Estimated value {estimated_value:,.0f} below {value_ratio:.0%} of loan {loan_amount:,.0f}"
+                )
+            else:
+                reasons.append(
+                    f"Estimated value {estimated_value:,.0f} below threshold {value_threshold:,.0f}"
+                )
+        if error_message:
+            reasons.append(f"Asset agent error: {error_message}")
+        if not reasons:
+            reasons.append("Confidence and value thresholds satisfied")
+
+        verified = meets_confidence and meets_value and not error_message
+        status_label = "Verified" if verified else "Failed"
+
+        enriched = dict(record)
+        enriched.update(
+            {
+                "collateral_estimated_value": round(estimated_value, 2),
+                "collateral_confidence": round(confidence, 4),
+                "collateral_verified": bool(verified),
+                "collateral_status": status_label,
+                "collateral_verification_reason": "; ".join(reasons),
+                "collateral_agent_asset_id": asset_result.get("asset_id"),
+                "collateral_agent_model": asset_result.get("model_name"),
+                "collateral_agent_timestamp": asset_result.get("timestamp"),
+                "collateral_value_threshold": round(value_threshold, 2),
+                "collateral_checked_at": datetime.datetime.utcnow().isoformat(),
+            }
+        )
+        rows.append(enriched)
+
+        if progress is not None:
+            progress.progress(idx / total)
+
+    if progress is not None:
+        progress.empty()
+
+    return dedupe_columns(pd.DataFrame(rows)), errors
 
 def append_user_info(df: pd.DataFrame) -> pd.DataFrame:
     if "user_info" not in st.session_state:
