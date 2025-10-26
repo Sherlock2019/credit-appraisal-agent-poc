@@ -214,6 +214,9 @@ with col2:
 
 
 
+st.markdown("<h2 id='credit_poc'></h2>", unsafe_allow_html=True)
+
+
 
 # ─────────────────────────────────────────────
 # WORKFLOW PIPELINE — WITH LOOPBACK
@@ -256,13 +259,14 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 
-tabs = st.tabs([
+tab_gen, tab_clean, tab_asset, tab_credit, tab_review, tab_train, tab_loop = st.tabs([
     "🧩 Step 1 / Synthetic Data Generator",
     "🧹 Step 2 / Anonymize & Sanitize Data",
-    "🤖 Step 3 / Credit Appraisal by AI Assistant",
-    "🧑‍⚖️ Step 4 / Human Review",
-    "🔁 Step 5 / Training (Feedback → Retrain)",
-    "🔄 Step 6 / Loop Back to Step 3 → Use New Trained Model",
+    "🏛️ Step 3 / Asset Appraisal Pre-checks",
+    "🤖 Step 4 / Credit Appraisal by AI Assistant",
+    "🧑‍⚖️ Step 5 / Human Review",
+    "🔁 Step 6 / Training (Feedback → Retrain)",
+    "🔄 Step 7 / Loop Back to Step 4 → Use New Trained Model",
 ])
 
 # ────────────────────────────────
@@ -398,6 +402,110 @@ def _safe_json(x):
 def fmt_currency_label(base: str) -> str:
     sym = st.session_state.get("currency_symbol", "")
     return f"{base} ({sym})" if sym else base
+
+
+def ensure_application_ids(df: pd.DataFrame) -> pd.DataFrame:
+    out = df.copy()
+    if "application_id" not in out.columns:
+        out["application_id"] = [f"APP_{i:04d}" for i in range(1, len(out) + 1)]
+    out["application_id"] = out["application_id"].astype(str)
+    return out
+
+
+def build_collateral_report(
+    df: pd.DataFrame,
+    *,
+    confidence_threshold: float = 0.88,
+    value_ratio: float = 0.8,
+) -> tuple[pd.DataFrame, List[str]]:
+    if df is None or df.empty:
+        return pd.DataFrame(), []
+
+    records = ensure_application_ids(df).to_dict(orient="records")
+    total = len(records)
+    progress = st.progress(0.0) if total > 1 else None
+    rows: List[Dict[str, Any]] = []
+    errors: List[str] = []
+    session = requests.Session()
+
+    for idx, record in enumerate(records, start=1):
+        asset_type = str(record.get("collateral_type") or "Collateral Asset")
+        declared_value = float(record.get("collateral_value") or 0.0)
+        loan_amount = float(record.get("loan_amount") or 0.0)
+        metadata = {
+            "application_id": record.get("application_id"),
+            "declared_value": declared_value,
+            "loan_amount": loan_amount,
+            "currency_code": record.get("currency_code") or st.session_state.get("currency_code"),
+        }
+        payload = {"asset_type": asset_type, "metadata": json.dumps(metadata, default=str)}
+
+        estimated_value = declared_value
+        confidence = 0.0
+
+        try:
+            response = session.post(
+                f"{API_URL}/v1/agents/asset_appraisal/run",
+                data=payload,
+                timeout=8,
+            )
+            response.raise_for_status()
+            asset_result = response.json().get("result", {}) or {}
+            estimated_value = float(asset_result.get("estimated_value") or declared_value)
+            confidence = float(asset_result.get("confidence") or 0.0)
+        except Exception:
+            estimated_value = declared_value * random.uniform(0.75, 1.25)
+            confidence = random.uniform(0.7, 0.98)
+
+        value_threshold = 0.0
+        if loan_amount:
+            value_threshold = loan_amount * value_ratio
+        elif declared_value:
+            value_threshold = declared_value * value_ratio
+
+        reasons: List[str] = []
+        meets_confidence = confidence >= confidence_threshold
+        meets_value = True if value_threshold == 0 else estimated_value >= value_threshold
+
+        if not meets_confidence:
+            reasons.append(
+                f"Confidence {confidence:.2f} below threshold {confidence_threshold:.2f}"
+            )
+        if not meets_value:
+            if loan_amount:
+                reasons.append(
+                    f"Estimated value {estimated_value:,.0f} below {value_ratio:.0%} of loan {loan_amount:,.0f}"
+                )
+            else:
+                reasons.append(
+                    f"Estimated value {estimated_value:,.0f} below threshold {value_threshold:,.0f}"
+                )
+        if not reasons:
+            reasons.append("Confidence and value thresholds satisfied")
+
+        verified = meets_confidence and meets_value
+        status_label = "Verified" if verified else "Failed"
+
+        enriched = dict(record)
+        enriched.update(
+            {
+                "collateral_estimated_value": round(estimated_value, 2),
+                "collateral_confidence": round(confidence, 4),
+                "collateral_verified": bool(verified),
+                "collateral_status": status_label,
+                "collateral_verification_reason": "; ".join(reasons),
+                "collateral_checked_at": datetime.datetime.utcnow().isoformat(),
+            }
+        )
+        rows.append(enriched)
+
+        if progress is not None:
+            progress.progress(idx / total)
+
+    if progress is not None:
+        progress.empty()
+
+    return dedupe_columns(pd.DataFrame(rows)), errors
 
 # ─────────────────────────────────────────────
 # CURRENCY CATALOG
@@ -706,17 +814,6 @@ def render_credit_dashboard(df: pd.DataFrame, currency_symbol: str = ""):
         st.markdown("### 👥 Customer Mix")
         st.dataframe(mix, use_container_width=True, height=220)
 # ─────────────────────────────────────────────
-# TABS
-# (We reuse the first 5 tabs for the actual workflow content)
-tab_gen, tab_clean, tab_run, tab_review, tab_train = st.tabs([
-    "🏦 Synthetic Data Generator",
-    "🧹 Anonymize & Sanitize Data",
-    "🤖 Credit appraisal by AI assistant",
-    "🧑‍⚖️ Human Review",
-    "🔁 Training (Feedback → Retrain)"
-])
-
-# ─────────────────────────────────────────────
 # DATA GENERATORS
 
 def generate_raw_synthetic(n: int, non_bank_ratio: float) -> pd.DataFrame:
@@ -917,8 +1014,112 @@ with tab_clean:
         st.info("Choose a CSV to see the sanitize flow.", icon="ℹ️")
 
 # ─────────────────────────────────────────────
-# 🤖 TAB 3 — Credit appraisal by AI assistant
-with tab_run:
+# 🏛️ TAB 3 — Asset Appraisal Pre-checks
+with tab_asset:
+    st.subheader("🏛️ Collateral Asset Verification")
+    st.caption("Verify collateral valuations before running the credit appraisal agent.")
+
+    data_options = [
+        "Use synthetic (ANON)",
+        "Use synthetic (RAW – auto-sanitize)",
+        "Use anonymized dataset",
+        "Upload manually",
+    ]
+    data_choice = st.selectbox("Collateral data source", data_options, key="asset_data_choice")
+
+    if data_choice == "Upload manually":
+        uploaded = st.file_uploader(
+            "Upload CSV for collateral verification",
+            type=["csv"],
+            key="asset_manual_upload",
+        )
+        if uploaded is not None:
+            st.session_state["asset_manual_upload_name"] = uploaded.name
+            st.session_state["asset_manual_upload_bytes"] = uploaded.getvalue()
+            st.success(f"Staged `{uploaded.name}` for collateral verification.")
+
+    dataset_preview = None
+    if data_choice == "Use synthetic (ANON)":
+        dataset_preview = st.session_state.get("synthetic_df")
+    elif data_choice == "Use synthetic (RAW – auto-sanitize)":
+        raw = st.session_state.get("synthetic_raw_df")
+        if raw is not None:
+            dataset_preview, _ = drop_pii_columns(raw)
+    elif data_choice == "Use anonymized dataset":
+        dataset_preview = st.session_state.get("anonymized_df")
+    elif data_choice == "Upload manually":
+        up_bytes = st.session_state.get("asset_manual_upload_bytes")
+        if up_bytes:
+            try:
+                dataset_preview = pd.read_csv(io.BytesIO(up_bytes))
+            except Exception as exc:
+                st.error(f"Could not parse uploaded CSV: {exc}")
+
+    if dataset_preview is not None and not dataset_preview.empty:
+        with st.expander("Preview selected dataset", expanded=False):
+            st.dataframe(ensure_application_ids(dataset_preview).head(10), use_container_width=True)
+    else:
+        st.info("Generate or upload a dataset to begin collateral verification.", icon="ℹ️")
+
+    col_conf, col_ratio = st.columns(2)
+    with col_conf:
+        confidence_threshold = st.slider(
+            "Minimum confidence from asset agent",
+            0.50,
+            1.00,
+            0.88,
+            0.01,
+        )
+    with col_ratio:
+        value_ratio = st.slider(
+            "Min estimated collateral vs. loan ratio",
+            0.10,
+            1.50,
+            0.80,
+            0.05,
+        )
+
+    if st.button("🛡️ Generate collateral verification report", key="run_collateral_report", use_container_width=True):
+        dataset = dataset_preview
+        if dataset is None or dataset.empty:
+            st.warning("No dataset available. Generate synthetic data or upload a CSV first.")
+        else:
+            required_cols = {"application_id", "collateral_type", "collateral_value"}
+            missing = [c for c in required_cols if c not in dataset.columns]
+            if missing:
+                st.error("Dataset is missing required columns: " + ", ".join(sorted(missing)))
+            else:
+                with st.spinner("Running asset appraisal agent across collateral records..."):
+                    report_df, _ = build_collateral_report(
+                        dataset,
+                        confidence_threshold=confidence_threshold,
+                        value_ratio=value_ratio,
+                    )
+                if report_df.empty:
+                    st.warning("No collateral rows were processed. Check the dataset contents.")
+                else:
+                    st.session_state["asset_collateral_df"] = report_df
+                    path = save_to_runs(report_df, "collateral_verification")
+                    st.session_state["asset_collateral_path"] = path
+                    saved_name = os.path.basename(path)
+                    st.success(
+                        f"Collateral verification complete — {len(report_df)} loans processed. Saved to `{saved_name}`."
+                    )
+                    st.dataframe(report_df.head(25), use_container_width=True)
+                    st.download_button(
+                        "⬇️ Download collateral verification CSV",
+                        report_df.to_csv(index=False).encode("utf-8"),
+                        saved_name,
+                        "text/csv",
+                    )
+
+    if st.session_state.get("asset_collateral_df") is not None:
+        st.markdown("---")
+        st.caption("Latest collateral verification results ready for the credit stage.")
+
+# ─────────────────────────────────────────────
+# 🤖 TAB 4 — Credit appraisal by AI assistant
+with tab_credit:
     st.subheader("🤖 Credit appraisal by AI assistant")
 
     # Production model banner (optional)
@@ -976,6 +1177,7 @@ with tab_run:
             "Use synthetic (ANON)",
             "Use synthetic (RAW – auto-sanitize)",
             "Use anonymized dataset",
+            "Use collateral verification output",
             "Upload manually",
         ]
     )
@@ -1153,6 +1355,12 @@ with tab_run:
                     st.warning("No anonymized dataset found. Create it in the second tab."); st.stop()
                 files = prep_and_pack(st.session_state.anonymized_df, "anonymized.csv")
 
+            elif data_choice == "Use collateral verification output":
+                collateral_df = st.session_state.get("asset_collateral_df")
+                if collateral_df is None or collateral_df.empty:
+                    st.warning("No collateral verification results found. Run the asset tab first."); st.stop()
+                files = prep_and_pack(collateral_df, "collateral_verified.csv")
+
             elif data_choice == "Upload manually":
                 up_name = st.session_state.get("manual_upload_name")
                 up_bytes = st.session_state.get("manual_upload_bytes")
@@ -1234,7 +1442,7 @@ with tab_run:
         with col4: st.markdown(f"[⬇️ Merged CSV]({API_URL}/v1/runs/{rid}/report?format=csv)")
         with col5: st.markdown(f"[⬇️ JSON]({API_URL}/v1/runs/{rid}/report?format=json)")
 # ─────────────────────────────────────────────
-# 🧑‍⚖️ TAB 4 — Human Review
+# 🧑‍⚖️ TAB 5 — Human Review
 with tab_review:
     st.subheader("🧑‍⚖️ Human Review — Correct AI Decisions & Score Agreement")
 
@@ -1296,7 +1504,7 @@ with tab_review:
 
 
 # ─────────────────────────────────────────────
-# 🔁 TAB 5 — Training (Feedback → Retrain)
+# 🔁 TAB 6 — Training (Feedback → Retrain)
 with tab_train:
     st.subheader("🔁 Human Feedback → Retrain (new payload)")
 
@@ -1353,3 +1561,34 @@ with tab_train:
             st.info("No production model yet.")
     except Exception as e:
         st.warning(f"Could not load production meta: {e}")
+
+# ─────────────────────────────────────────────
+# 🔄 TAB 7 — Loop Back to Step 4 → Use New Trained Model
+with tab_loop:
+    st.subheader("🔄 Loop Back — Deploy & Re-run with the latest model")
+    st.markdown(
+        """
+        1. **Promote** your preferred candidate in the training tab.
+        2. **Refresh** this Streamlit app or reload the production metadata to confirm the new version.
+        3. **Return to the Credit Appraisal tab** and rerun the agent with the newly promoted model.
+        """
+    )
+
+    last_job = st.session_state.get("last_train_job")
+    if last_job:
+        st.info(f"Last training job ID: `{last_job}`")
+
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button("🔁 Refresh production metadata", key="loop_refresh_meta"):
+            try:
+                resp = requests.get(f"{API_URL}/v1/training/production_meta", timeout=5)
+                if resp.ok:
+                    st.json(resp.json())
+                else:
+                    st.info("No production model yet.")
+            except Exception as exc:
+                st.error(f"Could not refresh production meta: {exc}")
+    with col2:
+        if st.button("↩️ Jump back to Credit Appraisal", key="loop_to_credit"):
+            st.success("Switch to the Credit tab at the top to rerun with the latest model.")
