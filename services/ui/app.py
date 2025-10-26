@@ -3,7 +3,6 @@
 # 🌐 OpenSource AI Agent Library + Credit Appraisal PoC by Dzoan (fixed skeleton)
 # ─────────────────────────────────────────────
 from __future__ import annotations
-
 import os
 import io
 import json
@@ -710,13 +709,25 @@ def page_asset():
         with st.expander("Preview selected dataset", expanded=False):
             st.dataframe(ensure_application_ids(dataset_preview).head(10), use_container_width=True)
     else:
-        st.info("Select or generate a dataset to begin collateral verification.", icon="ℹ️")
+        st.info("Generate or upload a dataset to begin collateral verification.", icon="ℹ️")
 
     col_conf, col_ratio = st.columns(2)
     with col_conf:
-        confidence_threshold = st.slider("Minimum confidence from asset agent", 0.50, 1.00, 0.88, 0.01)
+        confidence_threshold = st.slider(
+            "Minimum confidence from asset agent",
+            0.50,
+            1.00,
+            0.88,
+            0.01,
+        )
     with col_ratio:
-        value_ratio = st.slider("Min estimated collateral vs. loan ratio", 0.10, 1.50, 0.80, 0.05)
+        value_ratio = st.slider(
+            "Min estimated collateral vs. loan ratio",
+            0.10,
+            1.50,
+            0.80,
+            0.05,
+        )
 
     run_report = st.button("🛡️ Generate collateral verification report", use_container_width=True)
     if run_report:
