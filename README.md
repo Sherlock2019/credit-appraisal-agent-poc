@@ -42,6 +42,37 @@ Human feedback exported to CSV
 Retraining improves next model version
 ```
 
+### 🤖 Hugging Face + Kaggle Sandbox
+
+To accelerate experimentation with transformer backbones and public datasets,
+the repository now ships with a **sandbox library** under
+`services/api/agents/`:
+
+| Agent Task | Hugging Face Checkpoint | Sample Kaggle Dataset | Output |
+| --- | --- | --- | --- |
+| Credit Appraisal | `roberta-base` | Give Me Some Credit | Creditworthiness classification |
+| Asset Appraisal (text) | `distilbert-base-uncased` | House Prices – Advanced Regression | Property valuation heuristics |
+| Asset Appraisal (image) | `google/vit-base-patch16-224` | House Prices – image features | Visual embeddings |
+| KYC Agent (text) | `microsoft/layoutlm-base-uncased` | IDR Dataset | Document classification |
+| KYC Agent (OCR) | `microsoft/trocr-base-stage1` | IDR Dataset | Text extraction |
+| Fraud Detection | `bert-base-uncased` | Credit Card Fraud Detection | Anomaly scoring |
+| Customer Support | `distilbert-base-uncased` | Bank Customer Complaints | Intent classification |
+
+Each task is registered via `services/api/agents/model_registry.py`, providing
+lazily loaded tokenizers/processors and models.  Fine-tuning orchestration lives
+in `services/api/agents/trainer.py`, which can be executed directly:
+
+```bash
+python -m services.api.agents.trainer \
+  --task_name credit_appraisal \
+  --dataset_path datasets/give_me_some_credit.csv \
+  --text_col description \
+  --label_col target
+```
+
+The FastAPI training router exposes matching endpoints under `/v1/training/hf/*`
+for UI and automation workflows.
+
 ---
 
 ## 🚀 From PoC to Production — Scaling Vision
