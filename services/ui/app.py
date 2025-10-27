@@ -18,7 +18,7 @@ import requests
 import plotly.express as px
 
 # ────────────────────────────────
-# CONFIG
+# CONSTANTS / PATHS
 # ────────────────────────────────
 st.set_page_config(
     page_title="AI Agent Sandbox — By the People, For the People",
@@ -75,6 +75,7 @@ AGENTS = [
 # ────────────────────────────────
 # UTILITIES & STUBS (safe fallbacks)
 # ────────────────────────────────
+
 def load_image(base: str) -> Optional[str]:
     for ext in [".png", ".jpg", ".jpeg", ".webp", ".gif", ".svg"]:
         path = os.path.join(LANDING_IMG_DIR, f"{base}{ext}")
@@ -129,11 +130,33 @@ def to_agent_schema(df: pd.DataFrame) -> pd.DataFrame:
     # Optionally remap to expected columns; here we just pass-through
     return df
 
-def _to_float(val: Any, default: float = 0.0) -> float:
-    try:
-        return float(val)
-    except Exception:
-        return default
+def generate_raw_synthetic(n: int = 200, non_bank_ratio: float = 0.30) -> pd.DataFrame:
+    rng = np.random.default_rng(123)
+    ids = [f"APP_{i:04d}" for i in range(1, n + 1)]
+    income = rng.integers(5_000_000, 90_000_000, size=n)
+    loan_amount = (income * rng.uniform(0.5, 3.0, size=n)).astype(int)
+    collateral_value = (loan_amount * rng.uniform(0.6, 1.5, size=n)).astype(int)
+    customer_type = rng.choice(["Bank", "Non-bank"], p=[1 - non_bank_ratio, non_bank_ratio], size=n)
+    df = pd.DataFrame(
+        {
+            "application_id": ids,
+            "customer_name": [f"Name{i}" for i in range(n)],
+            "email": [f"user{i}@mail.local" for i in range(n)],
+            "phone": [f"+84-09{rng.integers(1000000, 9999999)}" for _ in range(n)],
+            "income": income,
+            "loan_amount": loan_amount,
+            "collateral_type": rng.choice(["House", "Car", "Gold", "Land"], size=n),
+            "collateral_value": collateral_value,
+            "customer_type": customer_type,
+            "currency_code": st.session_state.get("currency_code", "VND"),
+        }
+    )
+    fx = st.session_state.get("currency_fx", 1.0)
+    if fx != 1.0:
+        for column in ("income", "loan_amount", "collateral_value"):
+            if column in df.columns:
+                df[column] = (df[column] * fx).round(2)
+    return df
 
 def try_json(s: Any) -> Optional[Dict[str, Any]]:
     if isinstance(s, dict):
@@ -812,11 +835,11 @@ def page_asset():
     dataset_preview = None
     if data_choice == "Use synthetic (ANON)":
         dataset_preview = st.session_state.get("synthetic_df")
-    elif data_choice == "Use synthetic (RAW – auto-sanitize)":
+    elif choice == "Use synthetic (RAW – auto-sanitize)":
         raw = st.session_state.get("synthetic_raw_df")
         if raw is not None:
             dataset_preview, _ = drop_pii_columns(raw)
-    elif data_choice == "Use anonymized dataset":
+    elif choice == "Use anonymized dataset":
         dataset_preview = st.session_state.get("anonymized_df")
     elif data_choice == "Upload manually":
         up_bytes = st.session_state.get("manual_upload_bytes")
