@@ -6,6 +6,7 @@ from __future__ import annotations
 import os
 import io
 import json
+import os
 import random
 import datetime
 from typing import Optional, Dict, List, Any, Tuple
@@ -19,6 +20,11 @@ import plotly.express as px
 # ────────────────────────────────
 # CONFIG
 # ────────────────────────────────
+st.set_page_config(
+    page_title="AI Agent Sandbox — By the People, For the People",
+    layout="wide",
+)
+
 API_URL = os.getenv("API_URL", "http://localhost:8090")
 RUNS_DIR = os.path.expanduser("~/credit-appraisal-agent-poc/services/api/.runs")
 TMP_FEEDBACK_DIR = os.path.join(RUNS_DIR, "tmp_feedback")
@@ -81,8 +87,8 @@ def save_uploaded_image(uploaded_file, base: str) -> Optional[str]:
         return None
     ext = os.path.splitext(uploaded_file.name)[1].lower() or ".png"
     dest = os.path.join(LANDING_IMG_DIR, f"{base}{ext}")
-    with open(dest, "wb") as f:
-        f.write(uploaded_file.getvalue())
+    with open(dest, "wb") as fh:
+        fh.write(uploaded_file.getvalue())
     return dest
 
 def render_image_tag(agent_id: str, industry: str, emoji_fallback: str) -> str:
@@ -187,7 +193,122 @@ def set_currency_defaults():
 def fmt_currency_label(text: str) -> str:
     return f"{text}"
 
-def ensure_application_ids(df: pd.DataFrame) -> pd.DataFrame:
+def fmt_currency_label(text: str) -> str:
+    sym = st.session_state.get("currency_symbol", "")
+    return f"{text} ({sym})" if sym else text
+
+
+set_currency_defaults()
+
+def generate_raw_synthetic(n: int, non_bank_ratio: float) -> pd.DataFrame:
+    rng = np.random.default_rng(42)
+    names = [
+        "Alice Nguyen",
+        "Bao Tran",
+        "Chris Do",
+        "Duy Le",
+        "Emma Tran",
+        "Felix Nguyen",
+        "Giang Ho",
+        "Hanh Vo",
+        "Ivan Pham",
+        "Julia Ngo",
+    ]
+    emails = [f"{nm.split()[0].lower()}.{nm.split()[1].lower()}@gmail.com" for nm in names]
+    addresses = [
+        "23 Elm St, Boston, MA",
+        "19 Pine Ave, San Jose, CA",
+        "14 High St, London, UK",
+        "55 Nguyen Hue, Ho Chi Minh",
+        "78 Oak St, Chicago, IL",
+        "10 Broadway, New York, NY",
+        "8 Rue Lafayette, Paris, FR",
+        "21 Königstr, Berlin, DE",
+        "44 Maple Dr, Los Angeles, CA",
+        "22 Bay St, Toronto, CA",
+    ]
+    is_non_bank = rng.random(n) < non_bank_ratio
+    customer_type = np.where(is_non_bank, "non-bank", "bank")
+
+    df = pd.DataFrame(
+        {
+            "application_id": [f"APP_{i:04d}" for i in range(1, n + 1)],
+            "customer_name": rng.choice(names, n),
+            "email": rng.choice(emails, n),
+            "phone": [f"+1-202-555-{1000 + i:04d}" for i in range(n)],
+            "address": rng.choice(addresses, n),
+            "national_id": rng.integers(10_000_000, 99_999_999, n),
+            "age": rng.integers(21, 65, n),
+            "income": rng.integers(25_000, 150_000, n),
+            "employment_length": rng.integers(0, 30, n),
+            "loan_amount": rng.integers(5_000, 100_000, n),
+            "loan_duration_months": rng.choice([12, 24, 36, 48, 60, 72], n),
+            "collateral_value": rng.integers(8_000, 200_000, n),
+            "collateral_type": rng.choice(["real_estate", "car", "land", "deposit"], n),
+            "co_loaners": rng.choice([0, 1, 2], n, p=[0.7, 0.25, 0.05]),
+            "credit_score": rng.integers(300, 850, n),
+            "existing_debt": rng.integers(0, 50_000, n),
+            "assets_owned": rng.integers(10_000, 300_000, n),
+            "current_loans": rng.integers(0, 5, n),
+            "customer_type": customer_type,
+        }
+    )
+    eps = 1e-9
+    df["DTI"] = df["existing_debt"] / (df["income"] + eps)
+    df["LTV"] = df["loan_amount"] / (df["collateral_value"] + eps)
+    df["CCR"] = df["collateral_value"] / (df["loan_amount"] + eps)
+    df["ITI"] = (df["loan_amount"] / (df["loan_duration_months"] + eps)) / (df["income"] + eps)
+    df["CWI"] = (
+        (1 - df["DTI"]).clip(0, 1) * (1 - df["LTV"]).clip(0, 1) * df["CCR"].clip(0, 3)
+    )
+
+    fx = st.session_state.currency_fx
+    for col in ("income", "loan_amount", "collateral_value", "assets_owned", "existing_debt"):
+        df[col] = (df[col] * fx).round(2)
+    df["currency_code"] = st.session_state.currency_code
+    return dedupe_columns(df)
+
+
+def generate_anon_synthetic(n: int, non_bank_ratio: float) -> pd.DataFrame:
+    rng = np.random.default_rng(42)
+    is_non_bank = rng.random(n) < non_bank_ratio
+    customer_type = np.where(is_non_bank, "non-bank", "bank")
+
+    df = pd.DataFrame(
+        {
+            "application_id": [f"APP_{i:04d}" for i in range(1, n + 1)],
+            "age": rng.integers(21, 65, n),
+            "income": rng.integers(25_000, 150_000, n),
+            "employment_length": rng.integers(0, 30, n),
+            "loan_amount": rng.integers(5_000, 100_000, n),
+            "loan_duration_months": rng.choice([12, 24, 36, 48, 60, 72], n),
+            "collateral_value": rng.integers(8_000, 200_000, n),
+            "collateral_type": rng.choice(["real_estate", "car", "land", "deposit"], n),
+            "co_loaners": rng.choice([0, 1, 2], n, p=[0.7, 0.25, 0.05]),
+            "credit_score": rng.integers(300, 850, n),
+            "existing_debt": rng.integers(0, 50_000, n),
+            "assets_owned": rng.integers(10_000, 300_000, n),
+            "current_loans": rng.integers(0, 5, n),
+            "customer_type": customer_type,
+        }
+    )
+    eps = 1e-9
+    df["DTI"] = df["existing_debt"] / (df["income"] + eps)
+    df["LTV"] = df["loan_amount"] / (df["collateral_value"] + eps)
+    df["CCR"] = df["collateral_value"] / (df["loan_amount"] + eps)
+    df["ITI"] = (df["loan_amount"] / (df["loan_duration_months"] + eps)) / (df["income"] + eps)
+    df["CWI"] = (
+        (1 - df["DTI"]).clip(0, 1) * (1 - df["LTV"]).clip(0, 1) * df["CCR"].clip(0, 3)
+    )
+
+    fx = st.session_state.currency_fx
+    for col in ("income", "loan_amount", "collateral_value", "assets_owned", "existing_debt"):
+        df[col] = (df[col] * fx).round(2)
+    df["currency_code"] = st.session_state.currency_code
+    return dedupe_columns(df)
+
+
+def to_agent_schema(df: pd.DataFrame) -> pd.DataFrame:
     out = df.copy()
     if "application_id" not in out.columns:
         out["application_id"] = [f"APP_{i:04d}" for i in range(1, len(out) + 1)]
@@ -446,9 +567,9 @@ def render_landing():
     st.markdown("### 🔐 Login (Demo Mode)")
     col1, col2, col3 = st.columns([1, 1, 1])
     with col1:
-        username = st.text_input("Username", value="", placeholder="e.g. dzoan")
+        username = st.text_input("Username", placeholder="e.g. dzoan")
     with col2:
-        email = st.text_input("Email", value="", placeholder="e.g. dzoan@demo.local")
+        email = st.text_input("Email", placeholder="e.g. dzoan@demo.local")
     with col3:
         password = st.text_input("Password", type="password", placeholder="Enter any password")
 
@@ -519,8 +640,8 @@ def page_data():
     rows = st.slider("Number of rows to generate", 50, 2000, 200, step=50)
     non_bank_ratio = st.slider("Share of non-bank customers", 0.0, 1.0, 0.30, 0.05)
 
-    colA, colB = st.columns(2)
-    with colA:
+    col_raw, col_anon = st.columns(2)
+    with col_raw:
         if st.button("🔴 Generate RAW Synthetic Data (with PII)", use_container_width=True):
             raw_df = generate_raw_synthetic(rows, non_bank_ratio)
             st.session_state.synthetic_raw_df = raw_df
@@ -705,9 +826,9 @@ def page_asset():
             except Exception:
                 dataset_preview = None
 
-    if dataset_preview is not None and not dataset_preview.empty:
+    if dataset is not None and not dataset.empty:
         with st.expander("Preview selected dataset", expanded=False):
-            st.dataframe(ensure_application_ids(dataset_preview).head(10), use_container_width=True)
+            st.dataframe(ensure_application_ids(dataset).head(10), use_container_width=True)
     else:
         st.info("Generate or upload a dataset to begin collateral verification.", icon="ℹ️")
 
@@ -735,8 +856,8 @@ def page_asset():
         if dataset is None or dataset.empty:
             st.warning("No dataset available. Generate synthetic data or upload a CSV first.")
         else:
-            required_cols = {"application_id", "collateral_type", "collateral_value"}
-            missing = [c for c in required_cols if c not in dataset.columns]
+            required = {"application_id", "collateral_type", "collateral_value"}
+            missing = [c for c in required if c not in dataset.columns]
             if missing:
                 st.error("Dataset is missing required columns: " + ", ".join(sorted(missing)))
             else:
@@ -749,7 +870,7 @@ def page_asset():
                 if report_df.empty:
                     st.warning("No collateral rows were processed. Check the dataset contents.")
                 else:
-                    st.session_state["asset_collateral_df"] = report_df
+                    st.session_state.asset_collateral_df = report_df
                     path = save_to_runs(report_df, "collateral_verification")
                     st.session_state["asset_collateral_path"] = path
                     saved_name = os.path.basename(path)
@@ -854,7 +975,7 @@ def page_review():
     uploaded_review = st.file_uploader("Load AI outputs CSV for review (optional)", type=["csv"], key="review_csv_loader_stage")
     if uploaded_review is not None:
         try:
-            st.session_state["last_merged_df"] = pd.read_csv(uploaded_review)
+            st.session_state.last_merged_df = pd.read_csv(uploaded_review)
             st.success("Loaded review dataset from uploaded CSV.")
         except Exception as exc:
             st.error(f"Could not read uploaded CSV: {exc}")
