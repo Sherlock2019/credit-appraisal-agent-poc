@@ -143,3 +143,41 @@ https://credit-appraisal.local
 ---
 
 > 🧠 *“From sandbox to self-learning , self improving Agent models factory, to production — AI that learns from the people it serves.”*
+
+## 🧰 Global AI Sandbox Integration
+
+The credit appraisal agent now ships with tooling to participate in the global
+[AI-AIGENTbythePeoplesANDBOX](https://github.com/Sherlock2019/AI-AIGENTbythePeoplesANDBOX.git)
+infrastructure where **each agent lives in its own repository**.
+
+1. **Bootstrap the multi-repo workspace**
+   ```bash
+   chmod +x scripts/init_multi_repo.sh
+   ./scripts/init_multi_repo.sh --workspace ~/rackspace-aisandbox \
+       --hub-ref main --credit-ref main --asset-ref main
+   ```
+   The script clones the official
+   [`AI-AIGENTbythePeoplesANDBOX`](https://github.com/Sherlock2019/AI-AIGENTbythePeoplesANDBOX.git)
+   repository, adds the credit and asset appraisal services as git submodules,
+   and (optionally) seeds FastAPI boilerplate when the orchestrator repo is
+   empty. Use `--skip-seed` if the hub already contains its own implementation,
+   or run `./scripts/init_multi_repo.sh --help` for additional options (e.g.
+   pinning specific branches).
+
+2. **Configure agent discovery**
+   - Copy `infra/agent_registry.example.yaml` to `infra/agent_registry.yaml`.
+   - Update the URLs to match where each agent is running (local ports, Docker
+     containers, or remote servers).
+
+3. **Launch the stack**
+   - Start each agent (credit, asset, etc.).
+   - Run the hub FastAPI app inside the orchestrator repo: `uvicorn
+     services.api.main:app --port 8090`.
+   - Invoke the hub endpoint: `curl -X POST
+     http://localhost:8090/run/credit_appraisal -d '{"text": "sample"}'`.
+
+See `docs/multi_repo_sandbox.md` for a deeper walkthrough that covers the
+repository layout, CI/CD considerations, and ideas for extending the shared
+agent ecosystem.
+
+---
