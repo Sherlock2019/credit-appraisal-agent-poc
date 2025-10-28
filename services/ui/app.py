@@ -1,17 +1,16 @@
-# services/ui/app.py
+# services/ui/app.py — Fixed, self-contained version
 # ─────────────────────────────────────────────
-# 🌐 OpenSource AI Agent Library + Credit Appraisal PoC by Dzoan
+# 🌐 OpenSource AI Agent Library + Credit Appraisal PoC by Dzoan (fixed skeleton)
 # ─────────────────────────────────────────────
 from __future__ import annotations
 import os
-import re
 import io
 import json
 import datetime
 from typing import Optional, Dict, List, Any
 
-import pandas as pd
 import numpy as np
+import pandas as pd
 import streamlit as st
 import requests
 import plotly.express as px
@@ -53,7 +52,7 @@ st.set_page_config(
 )
 
 # ────────────────────────────────
-# HELPERS
+# UTILITIES & STUBS (safe fallbacks)
 # ────────────────────────────────
 def _clear_qp():
     """Clear query params (modern Streamlit API)."""
@@ -76,10 +75,9 @@ def save_uploaded_image(uploaded_file, base: str):
         return None
     ext = os.path.splitext(uploaded_file.name)[1].lower() or ".png"
     dest = os.path.join(LANDING_IMG_DIR, f"{base}{ext}")
-    with open(dest, "wb") as f:
-        f.write(uploaded_file.getvalue())
+    with open(dest, "wb") as fh:
+        fh.write(uploaded_file.getvalue())
     return dest
-
 
 def render_image_tag(agent_id: str, industry: str, emoji_fallback: str) -> str:
     base = agent_id.lower().replace(" ", "_")
@@ -378,7 +376,7 @@ def try_json(x):
     if not isinstance(x, str):
         return None
     try:
-        return json.loads(x)
+        return json.loads(s)
     except Exception:
         return None
 
@@ -439,8 +437,41 @@ def render_credit_dashboard(df: pd.DataFrame, currency_symbol: str = ""):
     Keeps decision filter in the table only.
     """
     if df is None or df.empty:
-        st.info("No data to visualize yet.")
+        st.info("No data to chart yet.")
         return
+    # Basic charts: decision distribution and loan amount histogram
+    if "decision" in df.columns:
+        fig1 = px.histogram(df, x="decision", title="Decision Distribution")
+        st.plotly_chart(fig1, use_container_width=True)
+    if "loan_amount" in df.columns:
+        fig2 = px.histogram(df, x="loan_amount", nbins=30, title=f"Loan Amounts {currency_symbol}".strip())
+        st.plotly_chart(fig2, use_container_width=True)
+
+def go_to_public_home(clear_user: bool = False) -> None:
+    if clear_user:
+        st.session_state.user_info = {"flagged": False}
+        st.session_state.logged_in = False
+    st.session_state.workflow_stage = "data"
+
+def logout_user():
+    st.session_state.clear()
+
+def build_session_kyc_registry(force: bool = False) -> pd.DataFrame:
+    # Synthetic KYC profiles — deterministic but simple
+    n = 200
+    rng = np.random.default_rng(42 if not force else None)
+    df = pd.DataFrame({
+        "profile_id": [f"KYC{i:04d}" for i in range(1, n+1)],
+        "kyc_status": rng.choice(["Cleared", "Enhanced Due Diligence", "Pending Docs"], p=[0.65, 0.1, 0.25], size=n),
+        "aml_risk": rng.choice(["Low", "Medium", "High", "Critical"], p=[0.6, 0.25, 0.1, 0.05], size=n),
+        "pep_status": rng.choice(["No match", "Match"], p=[0.95, 0.05], size=n),
+        "watchlist_hits": rng.integers(0, 3, size=n),
+        "next_refresh_due": pd.Timestamp.today() + pd.to_timedelta(rng.integers(0, 180, size=n), unit="D"),
+    })
+    ready = df.copy()
+    st.session_state["kyc_registry_ready"] = ready
+    st.session_state["kyc_registry_generated_at"] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    return df
 
     cols = df.columns
 
@@ -726,8 +757,8 @@ def generate_raw_synthetic(n: int, non_bank_ratio: float) -> pd.DataFrame:
         "55 Nguyen Hue, Ho Chi Minh","78 Oak St, Chicago, IL","10 Broadway, New York, NY",
         "8 Rue Lafayette, Paris, FR","21 Königstr, Berlin, DE","44 Maple Dr, Los Angeles, CA","22 Bay St, Toronto, CA"
     ]
-    is_non = rng.random(n) < non_bank_ratio
-    cust_type = np.where(is_non, "non-bank", "bank")
+    is_non_bank = rng.random(n) < non_bank_ratio
+    customer_type = np.where(is_non_bank, "non-bank", "bank")
 
     df = pd.DataFrame({
         "application_id": [f"APP_{i:04d}" for i in range(1, n + 1)],
@@ -755,18 +786,20 @@ def generate_raw_synthetic(n: int, non_bank_ratio: float) -> pd.DataFrame:
     df["LTV"] = df["loan_amount"] / (df["collateral_value"] + eps)
     df["CCR"] = df["collateral_value"] / (df["loan_amount"] + eps)
     df["ITI"] = (df["loan_amount"] / (df["loan_duration_months"] + eps)) / (df["income"] + eps)
-    df["CWI"] = ((1 - df["DTI"]).clip(0, 1)) * ((1 - df["LTV"]).clip(0, 1)) * (df["CCR"].clip(0, 3))
+    df["CWI"] = (
+        (1 - df["DTI"]).clip(0, 1) * (1 - df["LTV"]).clip(0, 1) * df["CCR"].clip(0, 3)
+    )
 
-    fx = st.session_state["currency_fx"]
-    for c in ("income", "loan_amount", "collateral_value", "assets_owned", "existing_debt"):
-        df[c] = (df[c] * fx).round(2)
-    df["currency_code"] = st.session_state["currency_code"]
+    fx = st.session_state.currency_fx
+    for col in ("income", "loan_amount", "collateral_value", "assets_owned", "existing_debt"):
+        df[col] = (df[col] * fx).round(2)
+    df["currency_code"] = st.session_state.currency_code
     return dedupe_columns(df)
 
 def generate_anon_synthetic(n: int, non_bank_ratio: float) -> pd.DataFrame:
     rng = np.random.default_rng(42)
-    is_non = rng.random(n) < non_bank_ratio
-    cust_type = np.where(is_non, "non-bank", "bank")
+    is_non_bank = rng.random(n) < non_bank_ratio
+    customer_type = np.where(is_non_bank, "non-bank", "bank")
 
     df = pd.DataFrame({
         "application_id": [f"APP_{i:04d}" for i in range(1, n + 1)],
@@ -789,12 +822,14 @@ def generate_anon_synthetic(n: int, non_bank_ratio: float) -> pd.DataFrame:
     df["LTV"] = df["loan_amount"] / (df["collateral_value"] + eps)
     df["CCR"] = df["collateral_value"] / (df["loan_amount"] + eps)
     df["ITI"] = (df["loan_amount"] / (df["loan_duration_months"] + eps)) / (df["income"] + eps)
-    df["CWI"] = ((1 - df["DTI"]).clip(0, 1)) * ((1 - df["LTV"]).clip(0, 1)) * (df["CCR"].clip(0, 3))
+    df["CWI"] = (
+        (1 - df["DTI"]).clip(0, 1) * (1 - df["LTV"]).clip(0, 1) * df["CCR"].clip(0, 3)
+    )
 
-    fx = st.session_state["currency_fx"]
-    for c in ("income", "loan_amount", "collateral_value", "assets_owned", "existing_debt"):
-        df[c] = (df[c] * fx).round(2)
-    df["currency_code"] = st.session_state["currency_code"]
+    fx = st.session_state.currency_fx
+    for col in ("income", "loan_amount", "collateral_value", "assets_owned", "existing_debt"):
+        df[col] = (df[col] * fx).round(2)
+    df["currency_code"] = st.session_state.currency_code
     return dedupe_columns(df)
 
 def to_agent_schema(df: pd.DataFrame) -> pd.DataFrame:
@@ -802,16 +837,204 @@ def to_agent_schema(df: pd.DataFrame) -> pd.DataFrame:
     Harmonize to the server-side agent’s expected schema.
     """
     out = df.copy()
-    n = len(out)
-    if "employment_years" not in out.columns:
-        out["employment_years"] = out.get("employment_length", 0)
-    if "debt_to_income" not in out.columns:
-        if "DTI" in out.columns:
-            out["debt_to_income"] = out["DTI"].astype(float)
-        elif "existing_debt" in out.columns and "income" in out.columns:
-            denom = out["income"].replace(0, np.nan)
-            dti = (out["existing_debt"] / denom).fillna(0.0)
-            out["debt_to_income"] = dti.clip(0, 10)
+    if "application_id" not in out.columns:
+        out["application_id"] = [f"APP_{i:04d}" for i in range(1, len(out) + 1)]
+    out["application_id"] = out["application_id"].astype(str)
+    return out
+
+# ────────────────────────────────
+# DARK MODE STYLES
+# ────────────────────────────────
+st.markdown("""
+<style>
+html, body, .block-container {
+    background-color: #0f172a !important;
+    color: #e2e8f0 !important;
+}
+.left-box {
+    background: radial-gradient(circle at top left, #0f172a, #1e293b);
+    color: #f1f5f9;
+    border-radius: 20px;
+    padding: 3rem 2rem;
+    height: 100%;
+    box-shadow: 6px 0 24px rgba(0,0,0,0.4);
+}
+.left-box h1 {font-size: 2.6rem; font-weight: 900; color: #fff; margin-bottom: 1rem;}
+.left-box p, .left-box h3 {font-size: 1rem; color: #cbd5e1; line-height: 1.6;}
+
+.right-box {
+    background: linear-gradient(180deg, #1e293b, #0f172a);
+    border-radius: 20px;
+    padding: 2rem;
+    color: #e2e8f0;
+    box-shadow: -6px 0 24px rgba(0,0,0,0.35);
+}
+.dataframe {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 15px;
+    color: #f1f5f9;
+    background-color: #0f172a;
+}
+.dataframe th {
+    background-color: #1e293b;
+    color: #f8fafc;
+    padding: 12px;
+    border-bottom: 2px solid #334155;
+}
+.dataframe td {
+    padding: 10px 14px;
+    border-bottom: 1px solid #334155;
+}
+.dataframe tr:hover {
+    background-color: #1e293b;
+    transition: background 0.3s ease-in-out;
+}
+.status-Available {color: #22c55e; font-weight:600;}
+.status-ComingSoon {color: #f59e0b; font-weight:600;}
+.pipeline-hero {
+    background: linear-gradient(135deg, rgba(37,99,235,0.25), rgba(59,130,246,0.55));
+    border-radius: 28px;
+    padding: 32px 36px;
+    margin-bottom: 32px;
+    border: 1px solid rgba(148, 163, 184, 0.2);
+    box-shadow: 0 20px 40px rgba(15, 23, 42, 0.45);
+}
+.pipeline-hero__eyebrow {
+    text-transform: uppercase;
+    letter-spacing: 0.14em;
+    font-size: 0.75rem;
+    color: rgba(226, 232, 240, 0.85);
+}
+.pipeline-hero__header h1 {
+    font-size: 3rem;
+    font-weight: 900;
+    margin: 12px 0 8px;
+    color: #ffffff;
+}
+.pipeline-hero__header p {
+    font-size: 1.1rem;
+    color: #e2e8f0;
+    max-width: 720px;
+    margin-bottom: 0;
+}
+.pipeline-steps {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 18px;
+    margin-top: 26px;
+}
+.pipeline-step {
+    background: rgba(15, 23, 42, 0.75);
+    border-radius: 20px;
+    padding: 20px 22px;
+    border: 1px solid rgba(148, 163, 184, 0.18);
+    display: flex;
+    gap: 16px;
+    align-items: flex-start;
+    min-height: 140px;
+}
+.pipeline-step--active {
+    background: linear-gradient(160deg, rgba(59, 130, 246, 0.28), rgba(37, 99, 235, 0.42));
+    border-color: rgba(96, 165, 250, 0.65);
+    box-shadow: 0 18px 32px rgba(30, 64, 175, 0.35);
+}
+.pipeline-step__index {
+    width: 42px;
+    height: 42px;
+    border-radius: 14px;
+    background: linear-gradient(180deg,#38bdf8,#2563eb);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 800;
+    color: #0f172a;
+    font-size: 1.1rem;
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.35);
+}
+.pipeline-step__index--active {
+    background: linear-gradient(180deg,#facc15,#f59e0b);
+    color: #1f2937;
+}
+.pipeline-step__body { flex: 1; }
+.pipeline-step__title {
+    font-weight: 700;
+    font-size: 1.1rem;
+    color: #f8fafc;
+    margin-bottom: 6px;
+}
+.pipeline-step__body p {
+    margin: 0;
+    font-size: 0.95rem;
+    color: rgba(226,232,240,0.85);
+}
+footer {
+    text-align: center;
+    padding: 2rem;
+    color: #64748b;
+    font-size: 0.9rem;
+    margin-top: 3rem;
+}
+</style>
+""", unsafe_allow_html=True)
+
+# ────────────────────────────────
+# SESSION DEFAULTS
+# ────────────────────────────────
+if "logged_in" not in st.session_state:
+    st.session_state.logged_in = False
+if "user_info" not in st.session_state:
+    st.session_state.user_info = {"flagged": False}
+st.session_state.user_info.setdefault("flagged", False)
+st.session_state.user_info.setdefault("timestamp", datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+if "workflow_stage" not in st.session_state:
+    st.session_state.workflow_stage = "data"
+if "currency_code_label" not in st.session_state:
+    st.session_state.currency_code_label = DEFAULT_CURRENCY
+set_currency_defaults()
+
+# ────────────────────────────────
+# HERO / PIPELINE
+# ────────────────────────────────
+def render_pipeline_hero(active_stage: str) -> None:
+    steps_html = "".join(
+        f"""
+        <div class='pipeline-step{' pipeline-step--active' if key == active_stage else ''}'>
+            <div class='pipeline-step__index{' pipeline-step__index--active' if key == active_stage else ''}'>{idx}</div>
+            <div class='pipeline-step__body'>
+                <div class='pipeline-step__title'>{title}</div>
+                <p>{desc}</p>
+            </div>
+        </div>
+        """
+        for idx, (key, title, desc) in enumerate(PIPELINE_STAGES, start=1)
+    )
+    st.markdown(
+        f"""
+        <div class='pipeline-hero'>
+            <div class='pipeline-hero__header'>
+                <div class='pipeline-hero__eyebrow'>Agent Workflow</div>
+                <h1>💳 AI Credit Appraisal Platform</h1>
+                <p>Generate, sanitize, and appraise credit with AI agent power and human decisions.</p>
+            </div>
+            <div class='pipeline-steps'>
+                {steps_html}
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+# ────────────────────────────────
+# LANDING / LOGIN
+# ────────────────────────────────
+def render_landing():
+    col1, col2 = st.columns([1.1, 1.9], gap="large")
+    with col1:
+        st.markdown("<div class='left-box'>", unsafe_allow_html=True)
+        logo_path = load_image("people_logo")
+        if logo_path:
+            st.image(logo_path, width=160)
         else:
             out["debt_to_income"] = 0.0
     rng = np.random.default_rng(12345)
@@ -848,10 +1071,10 @@ with tab_gen:
     rows = st.slider("Number of rows to generate", 50, 2000, 200, step=50)
     non_bank_ratio = st.slider("Share of non-bank customers", 0.0, 1.0, 0.30, 0.05)
 
-    colA, colB = st.columns(2)
-    with colA:
+    col_raw, col_anon = st.columns(2)
+    with col_raw:
         if st.button("🔴 Generate RAW Synthetic Data (with PII)", use_container_width=True):
-            raw_df = append_user_info(generate_raw_synthetic(rows, non_bank_ratio))
+            raw_df = generate_raw_synthetic(rows, non_bank_ratio)
             st.session_state.synthetic_raw_df = raw_df
             raw_path = save_to_runs(raw_df, "synthetic_raw")
             st.success(f"Generated RAW (PII) dataset with {rows} rows in {st.session_state['currency_label']}. Saved to {raw_path}")
@@ -865,7 +1088,7 @@ with tab_gen:
 
     with colB:
         if st.button("🟢 Generate ANON Synthetic Data (ready for agent)", use_container_width=True):
-            anon_df = append_user_info(generate_anon_synthetic(rows, non_bank_ratio))
+            anon_df = generate_anon_synthetic(rows, non_bank_ratio)
             st.session_state.synthetic_df = anon_df
             anon_path = save_to_runs(anon_df, "synthetic_anon")
             st.success(f"Generated ANON dataset with {rows} rows in {st.session_state['currency_label']}. Saved to {anon_path}")
@@ -890,7 +1113,6 @@ with tab_clean:
         except Exception as e:
             st.error(f"Could not read CSV: {e}")
             st.stop()
-
         st.write("📊 Original Data Preview:")
         st.dataframe(dedupe_columns(df.head(5)), use_container_width=True)
 
@@ -898,6 +1120,25 @@ with tab_clean:
         sanitized = append_user_info(sanitized)
         sanitized = dedupe_columns(sanitized)
         st.session_state.anonymized_df = sanitized
+        st.success(f"Dropped possible PII columns: {', '.join(dropped_cols) if dropped_cols else 'none'}")
+        st.dataframe(sanitized.head(10), use_container_width=True)
+
+    nav = st.columns([1,1,1])
+    with nav[0]:
+        if st.button("➡️ Continue to KYC"):
+            st.session_state.workflow_stage = "kyc"
+            st.rerun()
+
+def page_kyc():
+    render_pipeline_hero("kyc")
+    st.title("🛂 KYC & Compliance Workbench")
+    st.caption("Capture applicant identity, perform sanctions checks, and feed compliance context downstream.")
+
+    st.session_state.user_info.setdefault("timestamp", datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+    if st.button("🔁 Refresh Synthetic KYC Dossier"):
+        build_session_kyc_registry(force=True)
+        st.success("Synthetic KYC dossier refreshed.")
+        st.rerun()
 
         st.success(f"Dropped PII columns: {sorted(dropped_cols) if dropped_cols else 'None'}")
         st.write("✅ Sanitized Data Preview:")
@@ -1242,13 +1483,49 @@ with tab_review:
     uploaded_review = st.file_uploader("Load AI outputs CSV for review (optional)", type=["csv"], key="review_csv_loader")
     if uploaded_review is not None:
         try:
-            st.session_state["last_merged_df"] = pd.read_csv(uploaded_review)
+            st.session_state.last_merged_df = pd.read_csv(uploaded_review)
             st.success("Loaded review dataset from uploaded CSV.")
-        except Exception as e:
-            st.error(f"Could not read uploaded CSV: {e}")
+        except Exception as exc:
+            st.error(f"Could not read uploaded CSV: {exc}")
 
     if "last_merged_df" not in st.session_state:
-        st.info("Run the agent (previous tab) or upload an AI outputs CSV to load results for review.")
+        st.info("Run the agent (credit stage) or upload an AI outputs CSV to load results for review.")
+        return
+
+    dfm = st.session_state["last_merged_df"].copy()
+    if "decision" not in dfm.columns:
+        st.warning("No decision column found. Nothing to review.")
+        return
+
+    st.markdown("#### 1) Select rows to review and correct")
+    editable = dfm[["application_id", "decision"]].copy()
+    editable.rename(columns={"decision": "ai_decision"}, inplace=True)
+    editable["human_decision"] = editable["ai_decision"]
+    editable = st.data_editor(editable, num_rows="dynamic", use_container_width=True, key="review_editor")
+
+    if st.button("💾 Save corrections"):
+        st.session_state["review_corrections"] = editable
+        st.success("Corrections saved in session.")
+
+    nav = st.columns([1,1,1])
+    with nav[0]:
+        if st.button("⬅️ Back to Credit"):
+            st.session_state.workflow_stage = "credit"
+            st.rerun()
+    with nav[1]:
+        if st.button("➡️ Continue to Training"):
+            st.session_state.workflow_stage = "training"
+            st.rerun()
+
+def page_training():
+    render_pipeline_hero("training")
+    st.title("🔁 Training (Feedback → Retrain)")
+    st.caption("Loop curated feedback into retraining jobs and promote production-ready models.")
+
+    corr = st.session_state.get("review_corrections")
+    if corr is not None:
+        st.write("Recent corrections:")
+        st.dataframe(corr, use_container_width=True)
     else:
         dfm = st.session_state["last_merged_df"].copy()
         st.markdown("#### 1) Select rows to review and correct")
@@ -1274,15 +1551,24 @@ with tab_review:
             }
         )
 
-        st.markdown("#### 2) Compute agreement score")
-        if st.button("Compute agreement score"):
-            if "ai_decision" in edited.columns and "human_decision" in edited.columns:
-                agree = (edited["ai_decision"] == edited["human_decision"]).astype(int)
-                score = float(agree.mean()) if len(agree) else 0.0
-                st.success(f"Agreement score (AI vs human): {score:.3f}")
-                st.session_state["last_agreement_score"] = score
-            else:
-                st.warning("Missing decision columns to compute score.")
+    if st.button("📦 Export training dataset (CSV)"):
+        # For now, export latest run merged with corrections if any
+        base = st.session_state.get("last_merged_df")
+        if base is None or base.empty:
+            st.warning("No base run to export.")
+        else:
+            out = base.copy()
+            if corr is not None and "application_id" in corr.columns and "human_decision" in corr.columns:
+                out = out.merge(corr[["application_id", "human_decision"]], on="application_id", how="left")
+            buf = io.StringIO()
+            out.to_csv(buf, index=False)
+            st.download_button("⬇️ Download Training CSV", buf.getvalue().encode("utf-8"), "training_dataset.csv", "text/csv")
+
+    nav = st.columns([1,1,1])
+    with nav[0]:
+        if st.button("⬅️ Back to Review"):
+            st.session_state.workflow_stage = "review"
+            st.rerun()
 
         # Export review CSV (manual loop into training)
         st.markdown("#### 3) Export review CSV")
@@ -1343,13 +1629,32 @@ with tab_train:
             except Exception as e:
                 st.error(f"Promote failed: {e}")
 
-    st.markdown("---")
-    st.markdown("#### Production Model")
-    try:
-        resp = requests.get(f"{API_URL}/v1/training/production_meta", timeout=5)
-        if resp.ok:
-            st.json(resp.json())
-        else:
-            st.info("No production model yet.")
-    except Exception as e:
-        st.warning(f"Could not load production meta: {e}")
+    if not st.session_state.logged_in:
+        render_landing()
+        st.stop()
+
+    # Header & user flash
+    flash_user = st.session_state.pop("login_flash", None)
+    if flash_user:
+        st.success(f"✅ Logged in as {flash_user}")
+
+    # Main nav by workflow stage
+    stage = st.session_state.get("workflow_stage", "data")
+    if stage == "data":
+        page_data()
+    elif stage == "kyc":
+        page_kyc()
+    elif stage == "asset":
+        page_asset()
+    elif stage == "credit":
+        page_credit()
+    elif stage == "review":
+        page_review()
+    elif stage == "training":
+        page_training()
+    else:
+        st.session_state.workflow_stage = "data"
+        page_data()
+
+if __name__ == "__main__":
+    main()
