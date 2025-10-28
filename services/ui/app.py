@@ -7,7 +7,6 @@ import os
 import re
 import io
 import json
-import random
 import datetime
 from typing import Optional, Dict, List, Any
 
@@ -20,37 +19,340 @@ import plotly.graph_objects as go
 
 
 # ────────────────────────────────
-# CONFIG
+# 🔁 Manage active tab navigation manually
 # ────────────────────────────────
+if "active_tab" not in st.session_state:
+    st.session_state.active_tab = "tab_gen"  # or whichever tab should open by default
+
+def switch_tab(tab_name: str):
+    """Programmatically switch between workflow tabs."""
+    st.session_state.active_tab = tab_name
+    st.rerun()
+
+
+# ─────────────────────────────────────────────
+# 🌌 GLOBAL DARK THEME + BLUE GLOW ENHANCED UI
+st.markdown("""
+<style>
+/* ─────────────────────────────
+   GLOBAL BACKGROUND + TEXT
+───────────────────────────── */
+body, .stApp {
+    background-color: #0f172a !important;   /* very dark navy */
+    color: #e5e7eb !important;
+    font-family: 'Inter', sans-serif;
+}
+
+/* ─────────────────────────────
+   HEADER + TITLE AREA
+───────────────────────────── */
+[data-testid="stHeader"], .stApp header {
+    background: #0f172a !important;
+    color: #f8fafc !important;
+    border-bottom: 1px solid #1e293b !important;
+}
+
+/* Main App Title — add neon blue glow */
+h1, h2, h3 {
+    color: #f8fafc !important;
+    font-weight: 800 !important;
+    text-shadow: 0 0 8px rgba(37,99,235,0.6),
+                 0 0 16px rgba(59,130,246,0.3);
+}
+
+/* Subheaders (like Human Review, Credit Appraisal, etc.) */
+.stSubheader, h4, h5, h6 {
+    color: #f1f5f9 !important;
+    font-weight: 700 !important;
+    text-shadow: 0 0 4px rgba(37,99,235,0.4);
+}
+
+/* ─────────────────────────────
+   TAB BAR
+───────────────────────────── */
+div[data-baseweb="tab"] > button {
+    color: #cbd5e1 !important;
+    background-color: #1e293b !important;
+    border: 1px solid #334155 !important;
+    border-radius: 10px !important;
+    font-weight: 600 !important;
+}
+div[data-baseweb="tab"] > button[aria-selected="true"] {
+    background: linear-gradient(90deg, #2563eb, #1d4ed8);
+    color: white !important;
+    border: none !important;
+    box-shadow: 0 0 12px rgba(37,99,235,0.5);
+    transform: scale(1.05);
+}
+
+/* ─────────────────────────────
+   BOXES, EXPANDERS, AND CONTAINERS
+───────────────────────────── */
+.stExpander, .stFileUploader, .stDataFrame, .stJson, .stMetric {
+    background-color: #1e293b !important;
+    color: #f1f5f9 !important;
+    border-radius: 10px !important;
+}
+
+/* DataFrames */
+[data-testid="stDataFrame"] thead tr th {
+    color: #f1f5f9 !important;
+    background-color: #1e293b !important;
+    border-bottom: 1px solid #334155 !important;
+}
+[data-testid="stDataFrame"] tbody tr td {
+    color: #e2e8f0 !important;
+}
+
+/* Inputs & Selectors */
+input, select, textarea {
+    background-color: #1e293b !important;
+    color: #f8fafc !important;
+    border: 1px solid #334155 !important;
+    border-radius: 8px !important;
+}
+
+/* ─────────────────────────────
+   BUTTONS
+───────────────────────────── */
+.stButton > button {
+    background: linear-gradient(90deg, #2563eb, #1d4ed8) !important;
+    color: white !important;
+    font-weight: 700 !important;
+    border-radius: 10px !important;
+    padding: 10px 26px !important;
+    border: none !important;
+    box-shadow: 0 4px 14px rgba(0,0,0,0.3),
+                0 0 10px rgba(37,99,235,0.4);
+    transition: all 0.25s ease-in-out;
+}
+.stButton > button:hover {
+    transform: translateY(-3px);
+    background: linear-gradient(90deg, #1e40af, #1e3a8a) !important;
+    box-shadow: 0 6px 18px rgba(0,0,0,0.4),
+                0 0 18px rgba(37,99,235,0.6);
+}
+
+/* ─────────────────────────────
+   LINK STYLES
+───────────────────────────── */
+a {
+    color: #60a5fa !important;
+    text-decoration: none !important;
+}
+a:hover {
+    color: #93c5fd !important;
+    text-shadow: 0 0 6px rgba(96,165,250,0.6);
+}
+
+/* ─────────────────────────────
+   FILE UPLOADER + PROGRESS
+───────────────────────────── */
+.stFileUploader {
+    border: 1px solid #334155 !important;
+    background-color: #1e293b !important;
+    border-radius: 10px !important;
+    color: #e2e8f0 !important;
+    box-shadow: inset 0 0 8px rgba(37,99,235,0.25);
+}
+
+/* ─────────────────────────────
+   SCROLLBARS (for aesthetics)
+───────────────────────────── */
+::-webkit-scrollbar {
+    width: 10px;
+}
+::-webkit-scrollbar-track {
+    background: #1e293b;
+}
+::-webkit-scrollbar-thumb {
+    background: #3b82f6;
+    border-radius: 10px;
+}
+::-webkit-scrollbar-thumb:hover {
+    background: #60a5fa;
+}
+</style>
+""", unsafe_allow_html=True)
+
+# ─────────────────────────────────────────────
+# 🌟 READABILITY & INPUT FIELD FIX PATCH
+
+st.markdown("""
+<style>
+/* ─────────────────────────────
+   FIX: Input Fields + Dropdowns Too Dark
+───────────────────────────── */
+input, select, textarea, .stTextInput, .stSelectbox, .stNumberInput {
+    background-color: #1e293b !important;
+    color: #ffffff !important;
+    border: 1px solid #3b82f6 !important;
+    border-radius: 8px !important;
+    font-size: 18px !important;
+    font-weight: 600 !important;
+    padding: 8px 12px !important;
+}
+
+/* Dropdown menu items */
+div[data-baseweb="select"] > div {
+    background-color: #1e293b !important;
+    color: #f8fafc !important;
+    font-size: 18px !important;
+}
+
+/* Dropdown list options */
+ul[role="listbox"] li {
+    background-color: #1e293b !important;
+    color: #f8fafc !important;
+    font-size: 18px !important;
+}
+ul[role="listbox"] li:hover {
+    background-color: #2563eb !important;
+    color: white !important;
+}
+
+/* Sliders — brighter and thicker */
+[data-baseweb="slider"] div[role="slider"] {
+    background-color: #3b82f6 !important;
+}
+[data-baseweb="slider"] div {
+    height: 8px !important;
+}
+[data-testid="stSliderTickBar"] {
+    background-color: #334155 !important;
+}
+
+/* Labels + Captions */
+label, .stMarkdown p, .stCaption, .stText {
+    font-size: 18px !important;
+    color: #f1f5f9 !important;
+    font-weight: 500 !important;
+}
+
+/* Subheaders and Section Titles */
+h2, h3, h4, .stSubheader {
+    font-size: 26px !important;
+    color: #f8fafc !important;
+    text-shadow: 0 0 8px rgba(59,130,246,0.4);
+}
+
+/* Decision Rule Section Styling */
+[data-testid="stExpander"] > div:first-child {
+    background-color: #111827 !important;
+    color: #f8fafc !important;
+    font-size: 20px !important;
+    font-weight: 700 !important;
+}
+
+/* Tabs — make them more visible and larger text */
+div[data-baseweb="tab"] > button {
+    font-size: 18px !important;
+    padding: 10px 18px !important;
+}
+
+/* Global font size bump */
+.stMarkdown, .stText, p, span, div {
+    font-size: 18px !important;
+}
+</style>
+""", unsafe_allow_html=True)
+st.markdown("""
+<style>
+/* Brighten all radio + checkbox labels */
+div[role="radio"], div[role="checkbox"] label, label[data-baseweb="radio"], label[data-baseweb="checkbox"] {
+    color: #f8fafc !important;
+    font-size: 18px !important;
+    font-weight: 600 !important;
+}
+
+/* Fix small sub-labels near checkboxes */
+div[role="radio"] p, div[role="checkbox"] p {
+    color: #e2e8f0 !important;
+    font-size: 16px !important;
+}
+
+/* Make rule mode label visible */
+.stRadio label {
+    color: #f1f5f9 !important;
+    font-weight: 600 !important;
+}
+
+/* "Use LLM narrative" checkbox label */
+[data-testid="stCheckbox"] label {
+    color: #f8fafc !important;
+    font-size: 18px !important;
+    font-weight: 700 !important;
+}
+</style>
+""", unsafe_allow_html=True)
+
+# ─────────────────────────────────────────────
+# 🔁 Manage active tab navigation manually (INSERT HERE)
+# ─────────────────────────────────────────────
+if "active_tab" not in st.session_state:
+    st.session_state.active_tab = "tab_gen"  # or tab_train if you want to start from training
+
+def switch_tab(tab_name: str):
+    """Programmatically switch between workflow tabs."""
+    st.session_state.active_tab = tab_name
+    st.rerun()
+
+
+# ────────────────────────────────
+# GLOBAL CONFIG
+# ────────────────────────────────
+BASE_DIR = os.path.expanduser("~/credit-appraisal-agent-poc/services/ui")
+LANDING_IMG_DIR = os.path.join(BASE_DIR, "landing_images")
+RUNS_DIR = os.path.join(BASE_DIR, ".runs")
+TMP_FEEDBACK_DIR = os.path.join(BASE_DIR, ".tmp_feedback")
+
+for d in (LANDING_IMG_DIR, RUNS_DIR, TMP_FEEDBACK_DIR):
+    os.makedirs(d, exist_ok=True)
+
 API_URL = os.getenv("API_URL", "http://localhost:8090")
-ASSET_AGENT_REPO_URL = os.getenv(
-    "ASSET_AGENT_REPO_URL",
-    "https://github.com/Sherlock2019/asset-appraisal-agent-",
-)
-ASSET_SAMPLE_PATH = os.path.expanduser(
-    "~/credit-appraisal-agent-poc/asset_appraisal_agent/exports/sample_asset_appraisals.csv"
-)
-RUNS_DIR = os.path.expanduser("~/credit-appraisal-agent-poc/services/api/.runs")
-TMP_FEEDBACK_DIR = os.path.join(RUNS_DIR, "tmp_feedback")
-LANDING_IMG_DIR = os.path.expanduser("~/credit-appraisal-agent-poc/services/ui/landing_images")
 
-os.makedirs(RUNS_DIR, exist_ok=True)
-os.makedirs(TMP_FEEDBACK_DIR, exist_ok=True)
-os.makedirs(LANDING_IMG_DIR, exist_ok=True)
+# ────────────────────────────────
+# SESSION STATE INIT
+# ────────────────────────────────
+if "stage" not in st.session_state:
+    st.session_state.stage = "landing"
+if "user_info" not in st.session_state:
+    st.session_state.user_info = {"name": "", "email": "", "flagged": False}
+if "logged_in" not in st.session_state:
+    st.session_state.logged_in = False
+if "flagged" not in st.session_state.user_info:
+    st.session_state.user_info["flagged"] = False
+if "timestamp" not in st.session_state.user_info:
+    st.session_state.user_info["timestamp"] = datetime.datetime.utcnow().isoformat()
 
-st.set_page_config(page_title="AI Agent Sandbox — By the People, For the People", layout="wide")
+# ────────────────────────────────
+# PAGE CONFIG
+# ────────────────────────────────
+st.set_page_config(
+    page_title="AI Agent Sandbox — By the People, For the People",
+    layout="wide",
+)
 
 # ────────────────────────────────
 # HELPERS
 # ────────────────────────────────
+def _clear_qp():
+    """Clear query params (modern Streamlit API)."""
+    try:
+        st.query_params.clear()
+    except Exception:
+        pass
+
+
 def load_image(base: str) -> Optional[str]:
     for ext in [".png", ".jpg", ".jpeg", ".webp", ".gif", ".svg"]:
-        path = os.path.join(LANDING_IMG_DIR, f"{base}{ext}")
-        if os.path.exists(path):
-            return path
+        p = os.path.join(LANDING_IMG_DIR, f"{base}{ext}")
+        if os.path.exists(p):
+            return p
     return None
 
-def save_uploaded_image(uploaded_file, base: str) -> Optional[str]:
+
+def save_uploaded_image(uploaded_file, base: str):
     if not uploaded_file:
         return None
     ext = os.path.splitext(uploaded_file.name)[1].lower() or ".png"
@@ -59,248 +361,246 @@ def save_uploaded_image(uploaded_file, base: str) -> Optional[str]:
         f.write(uploaded_file.getvalue())
     return dest
 
+
 def render_image_tag(agent_id: str, industry: str, emoji_fallback: str) -> str:
     base = agent_id.lower().replace(" ", "_")
     img_path = load_image(base) or load_image(industry.replace(" ", "_"))
     if img_path:
-        return f'<img src="file://{img_path}" style="width:48px;height:48px;border-radius:10px;object-fit:cover;">'
-    else:
-        return f'<div style="font-size:32px;">{emoji_fallback}</div>'
+        return (
+            f'<img src="file://{img_path}" '
+            f'style="width:48px;height:48px;border-radius:10px;object-fit:cover;">'
+        )
+    return f'<div style="font-size:32px;">{emoji_fallback}</div>'
+
 
 # ────────────────────────────────
 # DATA
 # ────────────────────────────────
 AGENTS = [
-    ("🏦 Banking & Finance", "💰 Retail Banking", "💳 Credit Appraisal Agent", "Explainable AI for loan decisioning", "Available", "💳"),
-    (
-        "🏦 Banking & Finance",
-        "💰 Retail Banking",
-        "🏦 Asset Appraisal Agent",
-        "Market-driven collateral valuation",
-        "External Repo",
-        "🏦",
-    ),
-    ("🏦 Banking & Finance", "🩺 Insurance", "🩺 Claims Triage Agent", "Automated claims prioritization", "Coming Soon", "🩺"),
-    ("⚡ Energy & Sustainability", "🔋 EV & Charging", "⚡ EV Charger Optimizer", "Optimize charger deployment via AI", "Coming Soon", "⚡"),
-    ("⚡ Energy & Sustainability", "☀️ Solar", "☀️ Solar Yield Estimator", "Estimate solar ROI and efficiency", "Coming Soon", "☀️"),
-    ("🚗 Automobile & Transport", "🚙 Automobile", "🚗 Predictive Maintenance", "Prevent downtime via sensor analytics", "Coming Soon", "🚗"),
-    ("🚗 Automobile & Transport", "🔋 EV", "🔋 EV Battery Health Agent", "Monitor EV battery health cycles", "Coming Soon", "🔋"),
-    ("🚗 Automobile & Transport", "🚚 Ride-hailing / Logistics", "🛻 Fleet Route Optimizer", "Dynamic route optimization for fleets", "Coming Soon", "🛻"),
-    ("💻 Information Technology", "🧰 Support & Security", "🧩 IT Ticket Triage", "Auto-prioritize support tickets", "Coming Soon", "🧩"),
-    ("💻 Information Technology", "🛡️ Security", "🔐 SecOps Log Triage", "Detect anomalies & summarize alerts", "Coming Soon", "🔐"),
-    ("⚖️ Legal & Government", "⚖️ Law Firms", "⚖️ Contract Analyzer", "Extract clauses and compliance risks", "Coming Soon", "⚖️"),
-    ("⚖️ Legal & Government", "🏛️ Public Services", "🏛️ Citizen Service Agent", "Smart assistant for citizen services", "Coming Soon", "🏛️"),
-    ("🛍️ Retail / SMB / Creative", "🏬 Retail & eCommerce", "📈 Sales Forecast Agent", "Predict demand & inventory trends", "Coming Soon", "📈"),
-    ("🎬 Retail / SMB / Creative", "🎨 Media & Film", "🎬 Budget Cost Assistant", "Estimate, optimize, and track film & production costs using AI", "Coming Soon", "🎬"),
+    ("🏦 Banking & Finance", "💰 Retail Banking", "💳 Credit Appraisal Agent",
+     "Explainable AI for loan decisioning", "Available", "💳"),
+    ("🏦 Banking & Finance", "💰 Retail Banking", "🏦 Asset Appraisal Agent",
+     "Market-driven collateral valuation", "Coming Soon", "🏦"),
+    ("🏦 Banking & Finance", "🩺 Insurance", "🩺 Claims Triage Agent",
+     "Automated claims prioritization", "Coming Soon", "🩺"),
+    ("⚡ Energy & Sustainability", "🔋 EV & Charging", "⚡ EV Charger Optimizer",
+     "Optimize charger deployment via AI", "Coming Soon", "⚡"),
+    ("⚡ Energy & Sustainability", "☀️ Solar", "☀️ Solar Yield Estimator",
+     "Estimate solar ROI and efficiency", "Coming Soon", "☀️"),
+    ("🚗 Automobile & Transport", "🚙 Automobile", "🚗 Predictive Maintenance",
+     "Prevent downtime via sensor analytics", "Coming Soon", "🚗"),
+    ("🚗 Automobile & Transport", "🔋 EV", "🔋 EV Battery Health Agent",
+     "Monitor EV battery health cycles", "Coming Soon", "🔋"),
+    ("🚗 Automobile & Transport", "🚚 Ride-hailing / Logistics", "🛻 Fleet Route Optimizer",
+     "Dynamic route optimization for fleets", "Coming Soon", "🛻"),
+    ("💻 Information Technology", "🧰 Support & Security", "🧩 IT Ticket Triage",
+     "Auto-prioritize support tickets", "Coming Soon", "🧩"),
+    ("💻 Information Technology", "🛡️ Security", "🔐 SecOps Log Triage",
+     "Detect anomalies & summarize alerts", "Coming Soon", "🔐"),
+    ("⚖️ Legal & Government", "⚖️ Law Firms", "⚖️ Contract Analyzer",
+     "Extract clauses and compliance risks", "Coming Soon", "⚖️"),
+    ("⚖️ Legal & Government", "🏛️ Public Services", "🏛️ Citizen Service Agent",
+     "Smart assistant for citizen services", "Coming Soon", "🏛️"),
+    ("🛍️ Retail / SMB / Creative", "🏬 Retail & eCommerce", "📈 Sales Forecast Agent",
+     "Predict demand & inventory trends", "Coming Soon", "📈"),
+    ("🎬 Retail / SMB / Creative", "🎨 Media & Film", "🎬 Budget Cost Assistant",
+     "Estimate, optimize, and track film & production costs using AI", "Coming Soon", "🎬"),
 ]
 
 # ────────────────────────────────
-# DARK MODE STYLES
+# STYLES
 # ────────────────────────────────
-st.markdown("""
-<style>
-html, body, .block-container {
-    background-color: #0f172a !important;
-    color: #e2e8f0 !important;
-}
-.left-box {
-    background: radial-gradient(circle at top left, #0f172a, #1e293b);
-    color: #f1f5f9;
-    border-radius: 20px;
-    padding: 3rem 2rem;
-    height: 100%;
-    box-shadow: 6px 0 24px rgba(0,0,0,0.4);
-}
-.left-box h1 {font-size: 2.6rem; font-weight: 900; color: #fff; margin-bottom: 1rem;}
-.left-box p, .left-box h3 {font-size: 1rem; color: #cbd5e1; line-height: 1.6;}
-
-.right-box {
-    background: linear-gradient(180deg, #1e293b, #0f172a);
-    border-radius: 20px;
-    padding: 2rem;
-    color: #e2e8f0;
-    box-shadow: -6px 0 24px rgba(0,0,0,0.35);
-}
-.dataframe {
-    width: 100%;
-    border-collapse: collapse;
-    font-size: 15px;
-    color: #f1f5f9;
-    background-color: #0f172a;
-}
-.dataframe th {
-    background-color: #1e293b;
-    color: #f8fafc;
-    padding: 12px;
-    border-bottom: 2px solid #334155;
-}
-.dataframe td {
-    padding: 10px 14px;
-    border-bottom: 1px solid #334155;
-}
-.dataframe tr:hover {
-    background-color: #1e293b;
-    transition: background 0.3s ease-in-out;
-}
-.status-Available {color: #22c55e; font-weight:600;}
-.status-ComingSoon {color: #f59e0b; font-weight:600;}
-.status-ExternalRepo {color: #38bdf8; font-weight:600;}
-button {
-    transition: all 0.25s ease-in-out;
-}
-button:hover {
-    transform: translateY(-2px);
-    background: linear-gradient(90deg,#1d4ed8,#2563eb);
-}
-footer {
-    text-align: center;
-    padding: 2rem;
-    color: #64748b;
-    font-size: 0.9rem;
-    margin-top: 3rem;
-}
-</style>
-""", unsafe_allow_html=True)
+st.markdown(
+    """
+    <style>
+    html, body, .block-container { background-color:#0f172a !important; color:#e2e8f0 !important; }
+    footer { text-align:center; padding:2rem; color:#aab3c2; font-size:1.2rem; font-weight:600; margin-top:2rem; }
+    .left-box {
+        background: radial-gradient(circle at top left, #0f172a, #1e293b);
+        border-radius:20px; padding:3rem 2rem; color:#f1f5f9; box-shadow:6px 0 24px rgba(0,0,0,0.4);
+    }
+    .right-box {
+        background:linear-gradient(180deg,#1e293b,#0f172a);
+        border-radius:20px; padding:2rem; box-shadow:-6px 0 24px rgba(0,0,0,0.35);
+    }
+    .stButton > button {
+        border:none !important; cursor:pointer;
+        padding:14px 28px !important; font-size:18px !important; font-weight:700 !important;
+        border-radius:14px !important; color:#fff !important;
+        background:linear-gradient(180deg,#4ea3ff 0%,#2f86ff 60%,#0f6fff 100%) !important;
+        box-shadow:0 8px 24px rgba(15,111,255,0.35);
+    }
+    a.macbtn {
+        display:inline-block; text-decoration:none !important; color:#fff !important;
+        padding:10px 22px; font-weight:700; border-radius:12px;
+        background:linear-gradient(180deg,#4ea3ff 0%,#2f86ff 60%,#0f6fff 100%);
+    }
+    /* Larger workflow tabs */
+    [data-testid="stTabs"] [data-baseweb="tab"] {
+        font-size: 28px !important;
+        font-weight: 800 !important;
+        padding: 20px 40px !important;
+        border-radius: 12px !important;
+        background-color: #1e293b !important;
+        color: #f8fafc !important;
+    }
+    [data-testid="stTabs"] [data-baseweb="tab"][aria-selected="true"] {
+        background: linear-gradient(90deg, #2563eb, #1d4ed8) !important;
+        color: white !important;
+        border-bottom: 6px solid #60a5fa !important;
+        box-shadow: 0 4px 14px rgba(37,99,235,0.5);
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
 
 # ────────────────────────────────
-# LAYOUT
+# QUERY PARAM ROUTING (modern API)
 # ────────────────────────────────
-col1, col2 = st.columns([1.1, 1.9], gap="large")
+try:
+    qp = st.query_params
+except Exception:
+    qp = {}
 
-with col1:
-    st.markdown("<div class='left-box'>", unsafe_allow_html=True)
-    logo_path = load_image("people_logo")
-    if logo_path:
-        st.image(logo_path, width=160)
-    else:
-        logo_upload = st.file_uploader("Upload People Logo", type=["jpg", "png", "webp"], key="upload_logo")
-        if logo_upload:
-            save_uploaded_image(logo_upload, "people_logo")
-            st.success("✅ Logo uploaded successfully! Refreshing...")
+if "stage" in qp:
+    target = qp["stage"]
+    if target in {"landing", "agents", "login", "credit_agent"} and st.session_state.stage != target:
+        st.session_state.stage = target
+        _clear_qp()
+        st.rerun()
+
+if "launch" in qp or ("agent" in qp and qp.get("agent") == ["credit"]):
+    st.session_state.stage = "login"
+    _clear_qp()
+    st.rerun()
+
+# ────────────────────────────────
+# STAGE: LANDING
+# ────────────────────────────────
+if st.session_state.stage == "landing":
+    c1, c2 = st.columns([1.1, 1.9], gap="large")
+    with c1:
+        st.markdown("<div class='left-box'>", unsafe_allow_html=True)
+        logo_path = load_image("people_logo")
+        if logo_path:
+            st.image(logo_path, width=160)
+        else:
+            up = st.file_uploader("Upload People Logo", type=["jpg", "png", "webp"], key="upload_logo")
+            if up:
+                save_uploaded_image(up, "people_logo")
+                st.success("✅ Logo uploaded, refresh to view.")
+        st.markdown(
+            """
+            <h1>✊ Let’s Build an AI by the People, for the People</h1>
+            <h3>⚙️ Ready-to-Use AI Agent Sandbox — From Sandbox to Production</h3>
+            <p>Build, test, and deploy AI agents using open-source explainable models.<br><br>
+            <b>Privacy:</b> Synthetic & anonymized data only.<br>
+            <b>Deployment:</b> GPU-as-a-Service Cloud, zero CAPEX.</p>
+            """,
+            unsafe_allow_html=True,
+        )
+        if st.button("🚀 Start Building Now", key="btn_start_build_now"):
+            st.session_state.stage = "agents"
             st.rerun()
+        st.markdown("</div>", unsafe_allow_html=True)
+    with c2:
+        st.markdown("<div class='right-box'>", unsafe_allow_html=True)
+        st.markdown("<h2>📊 Global AI Agent Library</h2>", unsafe_allow_html=True)
+        rows = []
+        for sector, industry, agent, desc, status, emoji in AGENTS:
+            rows.append({
+                "🖼️": render_image_tag(agent, industry, emoji),
+                "🏭 Sector": sector,
+                "🧩 Industry": industry,
+                "🤖 Agent": agent,
+                "🧠 Description": desc,
+                "📶 Status": f'<span style="color:{"#22c55e" if status=="Available" else "#f59e0b"};">{status}</span>'
+            })
+        st.write(pd.DataFrame(rows).to_html(escape=False, index=False), unsafe_allow_html=True)
+        st.markdown("</div>", unsafe_allow_html=True)
+    st.markdown("<footer>Made with ❤️ by Dzoan Nguyen — Open AI Sandbox Initiative</footer>", unsafe_allow_html=True)
+    st.stop()
 
-    st.markdown("""
-    <h1>✊ Let’s Build an AI by the People, for the People</h1>
-    <h3>⚙️ Ready-to-Use AI Agent Sandbox — From Sandbox to Production</h3>
-    <p>
-    A world-class open innovation space where anyone can build, test, and deploy AI agents using open-source code, explainable models, and modular templates.<br><br>
-    For developers, startups, and enterprises — experiment, customize, and scale AI without barriers.<br><br>
-    <b>Privacy & Data Sovereignty:</b> Each agent runs under strict privacy controls and complies with GDPR & Vietnam Data Law 2025. Only anonymized or synthetic data is used — your data never leaves your environment.<br><br>
-    <b>From Sandbox to Production:</b> Start with ready-to-use agent templates, adapt, test, and deploy — all on GPU-as-a-Service Cloud with zero CAPEX.<br><br>
-    You dream it — now you can build it.
-    </p>
-    <div style="text-align:center;margin-top:2rem;">
-        <a href="#credit_poc" style="text-decoration:none;">
-            <button style="background:linear-gradient(90deg,#2563eb,#1d4ed8);
-                           border:none;border-radius:12px;color:white;
-                           padding:16px 32px;font-size:18px;cursor:pointer;">
-                🚀 Start Building Now
-            </button>
-        </a>
-    </div>
-    """, unsafe_allow_html=True)
-    st.markdown("</div>", unsafe_allow_html=True)
+# ────────────────────────────────
+# STAGE: AGENTS
+# ────────────────────────────────
+if st.session_state.stage == "agents":
+    top = st.columns([1, 4, 1])
+    with top[0]:
+        if st.button("⬅️ Back to Home", key="btn_back_home_from_agents"):
+            st.session_state.stage = "landing"
+            st.rerun()
+    with top[1]:
+        st.title("🤖 Available AI Agents")
 
-with col2:
-    st.markdown("<div class='right-box'>", unsafe_allow_html=True)
-    st.markdown("<h2>📊 Global AI Agent Library</h2>", unsafe_allow_html=True)
-    st.caption("Explore sectors, industries, and ready-to-use AI agents across domains.")
-
-    rows = []
-    for sector, industry, agent, desc, status, emoji in AGENTS:
-        rating = round(random.uniform(3.5, 5.0), 1)
-        users = random.randint(800, 9000)
-        comments = random.randint(5, 120)
-        image_html = render_image_tag(agent, industry, emoji)
-        rows.append({
-            "🖼️": image_html,
-            "🏭 Sector": sector,
-            "🧩 Industry": industry,
-            "🤖 Agent": agent,
-            "🧠 Description": desc,
-            "📶 Status": f'<span class="status-{status.replace(" ", "")}">{status}</span>',
-            "⭐ Rating": "⭐" * int(rating) + "☆" * (5 - int(rating)),
-            "👥 Users": users,
-            "💬 Comments": comments
-        })
-    df = pd.DataFrame(rows)
+    df = pd.DataFrame([
+        {"Agent": "💳 Credit Appraisal Agent",
+         "Description": "Explainable AI for retail loan decisioning",
+         "Status": "✅ Available",
+         "Action": '<a class="macbtn" href="?agent=credit&stage=login">🚀 Launch</a>'},
+        {"Agent": "🏦 Asset Appraisal Agent",
+         "Description": "Market-driven collateral valuation",
+         "Status": "🕓 Coming Soon", "Action": "—"},
+    ])
     st.write(df.to_html(escape=False, index=False), unsafe_allow_html=True)
-    st.markdown("</div>", unsafe_allow_html=True)
-
-
-
-
-# ─────────────────────────────────────────────
-# WORKFLOW PIPELINE — WITH LOOPBACK
-# ─────────────────────────────────────────────
-tabs = st.tabs([
-    "🧩 Step 1 / Synthetic Data Generator",
-    "🧹 Step 2 / Anonymize & Sanitize Data",
-    "🤖 Step 3 / Credit Appraisal by AI Assistant",
-    "🧑‍⚖️ Step 4 / Human Review",
-    "🔁 Step 5 / Training (Feedback → Retrain)",
-    "🔄 Step 6 / Loop Back to Step 3 → Use New Trained Model",
-])
+    st.markdown("<footer>Made with ❤️ by Dzoan Nguyen — Open AI Sandbox Initiative</footer>", unsafe_allow_html=True)
+    st.stop()
 
 # ────────────────────────────────
-# FOOTER
+# STAGE: LOGIN
 # ────────────────────────────────
-st.markdown("<footer>Made with ❤️ by Dzoan Nguyen— Open AI Sandbox Initiative</footer>", unsafe_allow_html=True)
-
-
-# ─────────────────────────────────────────────
-# HEADER — USER INFO + SECURITY
-
-st.title("💳 AI Credit Appraisal Platform")
-st.caption("Generate, sanitize, and appraise credit with AI agent Power and Human Decisions  .")
-
-# ──Login  Screen
-
-with st.container():
-    st.markdown("### 🔐 Login (Demo Mode)")
-    col1, col2, col3 = st.columns([1, 1, 1])
-    with col1:
-        username = st.text_input("Username", value="", placeholder="e.g. dzoan")
-    with col2:
-        email = st.text_input("Email", value="", placeholder="e.g. dzoan@demo.local")
-    with col3:
-        password = st.text_input("Password", type="password", placeholder="Enter any password")
-
-    login_btn = st.button("Login", type="primary", use_container_width=True)
-
-    # Initialize session vars
-    if "logged_in" not in st.session_state:
-        st.session_state.logged_in = False
-    if "user_info" not in st.session_state:
-        st.session_state.user_info = {}
-
-    # Login handler
-    if login_btn:
-        if username.strip() and email.strip():
-            st.session_state.logged_in = True
+if st.session_state.stage == "login":
+    top = st.columns([1, 4, 1])
+    with top[0]:
+        if st.button("⬅️ Back to Agents", key="btn_back_agents_from_login"):
+            st.session_state.stage = "agents"
+            st.rerun()
+    with top[1]:
+        st.title("🔐 Login to AI Credit Appraisal Platform")
+    c1, c2, c3 = st.columns([1, 1, 1])
+    with c1:
+        user = st.text_input("Username", placeholder="e.g. dzoan")
+    with c2:
+        email = st.text_input("Email", placeholder="e.g. dzoan@demo.local")
+    with c3:
+        pwd = st.text_input("Password", type="password", placeholder="Enter any password")
+    if st.button("Login", key="btn_login_submit", use_container_width=True):
+        if user.strip() and email.strip():
             st.session_state.user_info = {
-                "name": username.strip(),
+                "name": user.strip(),
                 "email": email.strip(),
                 "flagged": False,
-                "timestamp": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "timestamp": datetime.datetime.utcnow().isoformat()
             }
-            st.success(f"✅ Logged in as {username}")
+            st.session_state.logged_in = True
+            st.session_state.stage = "credit_agent"
+            st.rerun()
         else:
-            st.error("Please enter both username and email to continue.")
+            st.error("⚠️ Please fill all fields before continuing.")
+    st.markdown("<footer>Made with ❤️ by Dzoan Nguyen — Open AI Sandbox Initiative</footer>", unsafe_allow_html=True)
+    st.stop()
 
-    # Guard clause — stop UI if not logged in
-    if not st.session_state.logged_in:
-        st.warning("You must log in to continue.")
-        st.stop()
+# ────────────────────────────────
+# STAGE: CREDIT WORKFLOW
+# ────────────────────────────────
+if st.session_state.stage == "credit_agent":
+    top = st.columns([1, 4, 1])
+    with top[0]:
+        if st.button("⬅️ Back to Agents", key="btn_back_agents_from_pipeline"):
+            st.session_state.stage = "agents"
+            st.rerun()
+    with top[1]:
+        st.title("💳 AI Credit Appraisal Platform")
+        st.caption("Generate, sanitize, and appraise credit with AI agent power and human insight.")
 
-# Short aliases for backward compatibility
-user_name = st.session_state.user_info.get("name", "")
-user_email = st.session_state.user_info.get("email", "")
-flag_session = st.session_state.user_info.get("flagged", False)
 
 
-# ─────────────────────────────────────────────
+
+# ────────────────────────────────
 # GLOBAL UTILS
+# ────────────────────────────────
+
 
 BANNED_NAMES = {"race", "gender", "religion", "ethnicity", "ssn", "national_id"}
 PII_COLS = {"customer_name", "name", "email", "phone", "address", "ssn", "national_id", "dob"}
@@ -899,6 +1199,8 @@ with tab_clean:
 # 🤖 TAB 3 — Credit appraisal by AI assistant
 with tab_run:
     st.subheader("🤖 Credit appraisal by AI assistant")
+    # Anchor for loopback link from Training tab
+    st.markdown('<a name="credit-appraisal-stage"></a>', unsafe_allow_html=True)
 
     st.markdown("### 🏠 Collateral Asset Bridge (External Agent)")
     st.markdown(
@@ -1001,6 +1303,47 @@ with tab_run:
             st.info("ℹ️ Could not fetch production model meta.")
     except Exception:
         st.info("ℹ️ Production meta unavailable.")
+
+    # ─────────────────────────────────────────────
+    # 🧩 Model Selection (list all trained models)
+    # ─────────────────────────────────────────────
+    trained_dir = os.path.expanduser(
+        "~/credit-appraisal-agent-poc/agents/credit_appraisal/models/trained"
+    )
+    models = []
+    if os.path.exists(trained_dir):
+        for f in os.listdir(trained_dir):
+            if f.endswith(".joblib"):
+                fpath = os.path.join(trained_dir, f)
+                ctime = os.path.getctime(fpath)
+                created = datetime.datetime.fromtimestamp(ctime).strftime("%b %d, %Y %H:%M")
+                models.append((f, fpath, created))
+
+    if models:
+        models.sort(key=lambda x: x[2], reverse=True)
+        display_names = [f"{m[0]} — {m[2]}" for m in models]
+
+        selected_display = st.selectbox("📦 Select trained model to use", display_names)
+        selected_model = models[display_names.index(selected_display)][1]
+        st.success(f"✅ Using model: {os.path.basename(selected_model)}")
+
+        # Store for later use by /run API
+        st.session_state["selected_trained_model"] = selected_model
+
+        # Optional promote button
+        if st.button("🚀 Promote this model to Production"):
+            try:
+                prod_path = os.path.expanduser(
+                    "~/credit-appraisal-agent-poc/agents/credit_appraisal/models/production/model.joblib"
+                )
+                os.makedirs(os.path.dirname(prod_path), exist_ok=True)
+                import shutil
+                shutil.copy2(selected_model, prod_path)
+                st.success(f"✅ Model promoted to production: {os.path.basename(prod_path)}")
+            except Exception as e:
+                st.error(f"❌ Promotion failed: {e}")
+    else:
+        st.warning("⚠️ No trained models found — train one in Step 5 first.")
 
     # 1) Model + Hardware selection (UI hints)
     LLM_MODELS = [
@@ -1251,10 +1594,10 @@ with tab_run:
             merged_df = pd.read_csv(io.BytesIO(merged_bytes))
             st.session_state["last_merged_df"] = merged_df
 
-            # Export AI outputs as csv with currency code (for Human Review dropdown)
-            ts = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
-            out_name = f"ai-appraisal-outputs-{ts}-{st.session_state['currency_code']}.csv"
-            st.download_button("⬇️ Download AI outputs (CSV)", merged_df.to_csv(index=False).encode("utf-8"), out_name, "text/csv")
+            # # Export AI outputs as csv with currency code (for Human Review dropdown)
+            # ts = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+            # out_name = f"ai-appraisal-outputs-{ts}-{st.session_state['currency_code']}.csv"
+            # st.download_button("⬇️ Download AI outputs (CSV)", merged_df.to_csv(index=False).encode("utf-8"), out_name, "text/csv")
 
             # Decision filter IN TABLE (not hiding dashboard)
             st.markdown("### 📄 Credit Ai Agent  Decisions Table (filtered)")
@@ -1280,16 +1623,51 @@ with tab_run:
             ] if c in df_view.columns]
             st.dataframe(df_view[cols_show].head(500), use_container_width=True)
 
-            # Downloads
-            cdl1, cdl2, cdl3, cdl4, cdl5 = st.columns(5)
-            with cdl1: st.markdown(f"[⬇️ PDF report]({API_URL}/v1/runs/{rid}/report?format=pdf)")
-            with cdl2: st.markdown(f"[⬇️ Scores CSV]({API_URL}/v1/runs/{rid}/report?format=scores_csv)")
-            with cdl3: st.markdown(f"[⬇️ Explanations CSV]({API_URL}/v1/runs/{rid}/report?format=explanations_csv)")
-            with cdl4: st.markdown(f"[⬇️ Merged CSV]({API_URL}/v1/runs/{rid}/report?format=csv)")
-            with cdl5: st.markdown(f"[⬇️ JSON]({API_URL}/v1/runs/{rid}/report?format=json)")
+            #  # Export AI outputs as csv with currency code (for Human Review dropdown)
+            # ts = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+            # out_name = f"ai-appraisal-outputs-{ts}-{st.session_state['currency_code']}.csv"
+            # st.download_button("⬇️ Download AI outputs (CSV)", merged_df.to_csv(index=False).encode("utf-8"), out_name, "text/csv")
+            # Export AI outputs as CSV with currency code (for Human Review dropdown)
+
+                        # Export AI outputs as CSV with currency code (for Human Review dropdown)
+            ts = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+            out_name = f"ai-appraisal-outputs-{ts}-{st.session_state['currency_code']}.csv"
+            csv_data = merged_df.to_csv(index=False).encode("utf-8")
+
+            # Correct CSS selector for Streamlit's download button
+            st.markdown("""
+            <style>
+            div[data-testid="stDownloadButton"] button {
+                font-size: 90px !important;
+                font-weight: 900 !important;
+                padding: 28px 48px !important;
+                border-radius: 16px !important;
+                background: linear-gradient(90deg, #2563eb, #1d4ed8) !important;
+                color: white !important;
+                border: none !important;
+                box-shadow: 0 6px 18px rgba(0,0,0,0.35) !important;
+                transition: all 0.3s ease-in-out !important;
+            }
+            div[data-testid="stDownloadButton"] button:hover {
+                background: linear-gradient(90deg, #1e3a8a, #1d4ed8) !important;
+                transform: scale(1.03);
+            }
+            </style>
+            """, unsafe_allow_html=True)
+
+            # Styled large download button
+            st.download_button(
+                "⬇️ Download AI Outputs For Human Review (CSV)",
+                csv_data,
+                file_name=out_name,
+                mime="text/csv",
+                use_container_width=True
+            )
 
         except Exception as e:
             st.exception(e)
+
+
 
     # Re-download quick section
     if st.session_state.get("last_run_id"):
@@ -1307,7 +1685,7 @@ with tab_run:
 # ─────────────────────────────────────────────
 # 🧑‍⚖️ TAB 4 — Human Review
 with tab_review:
-    st.subheader("🧑‍⚖️ Human Review — Correct AI Decisions & Score Agreement")
+    st.subheader("🧑‍⚖️ Human Review — Correct AI Decisions & Score Agreement > Drop your AI appraisal output CSV from previous Stage  below")
 
     # Allow loading AI output CSV back into review via dropdown upload
     uploaded_review = st.file_uploader("Load AI outputs CSV for review (optional)", type=["csv"], key="review_csv_loader")
@@ -1346,17 +1724,151 @@ with tab_review:
         )
 
         st.markdown("#### 2) Compute agreement score")
+        # if st.button("Compute agreement score"):
+        #     if "ai_decision" in edited.columns and "human_decision" in edited.columns:
+        #         agree = (edited["ai_decision"] == edited["human_decision"]).astype(int)
+        #         score = float(agree.mean()) if len(agree) else 0.0
+        #         st.success(f"Agreement score (AI vs human): {score:.3f}")
+        #         st.session_state["last_agreement_score"] = score
+        #     else:
+        #         st.warning("Missing decision columns to compute score.")
         if st.button("Compute agreement score"):
             if "ai_decision" in edited.columns and "human_decision" in edited.columns:
                 agree = (edited["ai_decision"] == edited["human_decision"]).astype(int)
                 score = float(agree.mean()) if len(agree) else 0.0
-                st.success(f"Agreement score (AI vs human): {score:.3f}")
                 st.session_state["last_agreement_score"] = score
-            else:
-                st.warning("Missing decision columns to compute score.")
+
+                # 🌡️ BEAUTIFUL Gauge
+                import plotly.graph_objects as go
+                fig = go.Figure(go.Indicator(
+                    mode="gauge+number",
+                    value=score * 100,
+                    number={'suffix': "%", 'font': {'size': 72, 'color': "#f8fafc", 'family': "Arial Black"}},
+                    title={'text': "AI ↔ Human Agreement", 'font': {'size': 28, 'color': "#93c5fd", 'family': "Arial"}},
+                    gauge={
+                        'axis': {'range': [0, 100], 'tickwidth': 2, 'tickcolor': "#f8fafc"},
+                        'bar': {'color': "#3b82f6", 'thickness': 0.3},
+                        'bgcolor': "#1e293b",
+                        'borderwidth': 2,
+                        'bordercolor': "#334155",
+                        'steps': [
+                            {'range': [0, 50], 'color': "#ef4444"},
+                            {'range': [50, 75], 'color': "#f59e0b"},
+                            {'range': [75, 100], 'color': "#22c55e"},
+                        ],
+                    }
+                ))
+                fig.update_layout(
+                    paper_bgcolor="#0f172a",
+                    plot_bgcolor="#0f172a",
+                    height=400,
+                    margin=dict(t=60, b=20, l=60, r=60)
+                )
+                st.plotly_chart(fig, use_container_width=True)
+
+            #     # 💡 Detailed disagreement table (safe + color)
+            #     mismatched = edited[edited["ai_decision"] != edited["human_decision"]].copy()
+            #     total = len(edited)
+            #     disagree = len(mismatched)
+            #     if disagree > 0:
+            #         st.markdown(f"### ❌ {disagree} loans disagreed out of {total} ({(disagree/total)*100:.1f}% disagreement rate)")
+
+            #         import json
+
+            #         def extract_disagreement_reasons(r: str):
+            #             """Parse rule_reasons safely and extract disagreement causes."""
+            #             if not isinstance(r, str):
+            #                 return "Manual review adjustment"
+            #             try:
+            #                 data = json.loads(r.replace("'", "\""))
+            #                 failed = [k for k, v in data.items() if v is False]
+            #                 if failed:
+            #                     return "Human override on: " + ", ".join(failed)
+            #                 return "Manual review adjustment"
+            #             except Exception:
+            #                 return "Manual review adjustment"
+
+            #         if "rule_reasons" in mismatched.columns:
+            #             mismatched["why_disagree"] = mismatched["rule_reasons"].apply(extract_disagreement_reasons)
+            #         else:
+            #             mismatched["why_disagree"] = "Manual review adjustment"
+
+            #         # 🟩🟥 Color styling for AI vs Human
+            #         def highlight_disagreement(row):
+            #             ai_color = "background-color: #ef4444; color: white;"      # red for AI
+            #             human_color = "background-color: #22c55e; color: black;"   # green for Human
+            #             return [
+            #                 ai_color if col == "ai_decision" else
+            #                 human_color if col == "human_decision" else
+            #                 ""
+            #                 for col in row.index
+            #             ]
+
+            #         show_cols = [c for c in ["application_id", "ai_decision", "human_decision", "why_disagree"] if c in mismatched.columns]
+            #         styled_df = mismatched[show_cols].style.apply(highlight_disagreement, axis=1)
+            #         st.dataframe(styled_df, use_container_width=True, height=400)
+            #     else:
+            #         st.success("✅ Full agreement — no human-AI mismatches found.")
+            # else:
+            #     st.warning("Missing decision columns to compute score.")
+
+            # 💡 Detailed disagreement table (AI vs Human + AI metrics explanation)
+                mismatched = edited[edited["ai_decision"] != edited["human_decision"]].copy()
+                total = len(edited)
+                disagree = len(mismatched)
+
+                if disagree > 0:
+                    st.markdown(f"### ❌ {disagree} loans disagreed out of {total} ({(disagree/total)*100:.1f}% disagreement rate)")
+
+                    import json
+
+                    def parse_ai_reason(r: str):
+                        """Parse AI rule_reasons and summarize which metrics passed or failed."""
+                        if not isinstance(r, str):
+                            return "No metrics available"
+                        try:
+                            data = json.loads(r.replace("'", "\""))
+                            passed = [k for k, v in data.items() if v is True]
+                            failed = [k for k, v in data.items() if v is False]
+                            result = []
+                            if passed:
+                                result.append("✅ Pass: " + ", ".join(passed))
+                            if failed:
+                                result.append("❌ Fail: " + ", ".join(failed))
+                            return " | ".join(result) if result else "No metrics recorded"
+                        except Exception:
+                            return "Unreadable metrics"
+
+                    # Extract AI reasoning and Human reason columns
+                    mismatched["ai_metrics"] = mismatched["rule_reasons"].apply(parse_ai_reason) if "rule_reasons" in mismatched else "No data"
+                    mismatched["human_reason"] = mismatched.get("human_rule_reasons", "Manual review adjustment")
+
+                    # 🟩🟥 Color styling for AI vs Human
+                    def highlight_disagreement(row):
+                        ai_color = "background-color: #ef4444; color: white;"      # red for AI decision
+                        human_color = "background-color: #22c55e; color: black;"   # green for Human decision
+                        return [
+                            ai_color if col == "ai_decision" else
+                            human_color if col == "human_decision" else
+                            ""
+                            for col in row.index
+                        ]
+
+                    # Columns: ID → AI Decision → Human Decision → AI Metrics → Human Reason
+                    show_cols = [
+                        c for c in ["application_id", "ai_decision", "human_decision", "ai_metrics", "human_reason"]
+                        if c in mismatched.columns
+                    ]
+                    styled_df = mismatched[show_cols].style.apply(highlight_disagreement, axis=1)
+                    st.dataframe(styled_df, use_container_width=True, height=420)
+
+                else:
+                    st.success("✅ Full agreement — no human-AI mismatches found.")
+
+
 
         # Export review CSV (manual loop into training)
-        st.markdown("#### 3) Export review CSV")
+        st.markdown("#### 3) Export Human review CSV for Next Step : Training and loopback ")
         model_used = "production"  # if you track specific model names, set it here
         ts = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
         safe_user = st.session_state["user_info"]["name"].replace(" ", "").lower()
@@ -1369,7 +1881,7 @@ with tab_review:
 # ─────────────────────────────────────────────
 # 🔁 TAB 5 — Training (Feedback → Retrain)
 with tab_train:
-    st.subheader("🔁 Human Feedback → Retrain (new payload)")
+    st.subheader("🔁 From Human Feedback CSV → Train and Promote Trained Model to Production Model ")
 
     st.markdown("**Drag & drop** one or more review CSVs exported from the Human Review tab.")
     up_list = st.file_uploader("Upload feedback CSV(s)", type=["csv"], accept_multiple_files=True, key="train_feedback_uploader")
@@ -1424,3 +1936,33 @@ with tab_train:
             st.info("No production model yet.")
     except Exception as e:
         st.warning(f"Could not load production meta: {e}")
+
+
+      # 🔁 Loopback Section (Real functional button)
+
+    st.markdown("---")
+
+    # ─────────────────────────────────────────────
+    # 🔁 Loopback Section — Go back to Step 3
+    # ─────────────────────────────────────────────
+    st.markdown("---")
+    st.markdown("### 💳 Loop back to Step 3 — Credit Appraisal Agent")
+    st.caption("After retraining, return to the Credit Appraisal tab and use your new production model.")
+
+    st.markdown("""
+    <a href="#credit-appraisal-stage" target="_self">
+        <button style="
+            background-color:#2563eb;
+            color:white;
+            border:none;
+            border-radius:8px;
+            padding:12px 24px;
+            font-size:16px;
+            font-weight:600;
+            cursor:pointer;
+            width:100%;
+            box-shadow:0px 0px 6px rgba(37,99,235,0.5);
+        ">⬅️ Go Back to Step 3 and Use New Model</button>
+    </a>
+    """, unsafe_allow_html=True)
+
