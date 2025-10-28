@@ -7,10 +7,11 @@ from typing import List, Optional, Dict, Any
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field, field_validator
 
+from services.api.agents import list_registered_tasks
+from services.api.agents.trainer import train_agent as hf_train_agent
+
 # Model utils from the credit appraisal agent
 from agents.credit_appraisal import model_utils as MU
-from services.api.agents.model_registry import MODEL_MAP
-from services.api.agents.trainer import TRAINABLE_TASKS, train_agent
 
 router = APIRouter(prefix="/v1/training", tags=["training"])
 
@@ -42,30 +43,32 @@ class PromoteRequest(BaseModel):
 
 
 class HFTrainRequest(BaseModel):
-    """Request payload for Hugging Face fine-tuning."""
-
-    task_name: str = Field(..., description="Task identifier registered in MODEL_MAP")
-    dataset_path: str = Field(..., description="Path to the Kaggle dataset CSV")
-    text_col: str = Field(..., description="Name of the text column")
-    label_col: str = Field(..., description="Name of the label column")
-
-    @field_validator("task_name")
-    @classmethod
-    def _validate_task(cls, value: str) -> str:
-        if value not in MODEL_MAP:
-            raise ValueError(f"Unsupported task '{value}'. Available: {sorted(MODEL_MAP)}")
-        if value not in TRAINABLE_TASKS:
-            raise ValueError(
-                f"Task '{value}' is not supported for Hugging Face fine-tuning. Choose from: {sorted(TRAINABLE_TASKS)}"
-            )
-        return value
+    task_name: str = Field(..., description="Registered Hugging Face task identifier")
+    dataset_path: str = Field(..., description="Path to a Kaggle dataset (CSV/TSV)")
+    text_col: str = Field(..., description="Column containing free-text features")
+    label_col: str = Field(..., description="Target column")
+    num_train_epochs: int = Field(2, ge=1)
+    learning_rate: float = Field(2e-5, gt=0)
+    per_device_train_batch_size: int = Field(8, ge=1)
+    weight_decay: float = Field(0.01, ge=0)
+    warmup_steps: int = Field(0, ge=0)
+    max_train_samples: Optional[int] = Field(None, ge=1)
+    evaluation_split: float = Field(0.2, ge=0.0, lt=1.0)
+    seed: int = Field(42)
 
     @field_validator("dataset_path")
     @classmethod
-    def _validate_dataset(cls, value: str) -> str:
-        if not os.path.exists(value):
-            raise ValueError(f"Dataset not found: {value}")
-        return value
+    def _dataset_exists(cls, v: str) -> str:
+        if not os.path.exists(v):
+            raise ValueError(f"Dataset not found: {v}")
+        return v
+
+    @field_validator("task_name")
+    @classmethod
+    def _task_registered(cls, v: str) -> str:
+        if v not in list_registered_tasks():
+            raise ValueError(f"Unknown task '{v}'. Available: {sorted(list_registered_tasks())}")
+        return v
 
 
 # ───────────────────────────────────────────────────────────────
@@ -152,31 +155,40 @@ def list_models(kind: str = "trained") -> Dict[str, Any]:
         raise HTTPException(status_code=500, detail=f"Failed to list models: {e}")
 
 
+@router.get("/hf/tasks")
+def list_hf_tasks() -> Dict[str, Any]:
+    """Expose the available Hugging Face task registrations."""
+
+    return {"tasks": list_registered_tasks()}
+
+
 @router.post("/hf/train")
-def train_huggingface(req: HFTrainRequest) -> Dict[str, Any]:
-    """Fine-tune a registered Hugging Face model using a Kaggle dataset."""
+def hf_train(req: HFTrainRequest) -> Dict[str, Any]:
+    """Kick off a lightweight fine-tuning job for a Hugging Face model."""
 
     try:
-        save_path = train_agent(
+        output_dir = hf_train_agent(
             task_name=req.task_name,
             dataset_path=req.dataset_path,
             text_col=req.text_col,
             label_col=req.label_col,
+            num_train_epochs=req.num_train_epochs,
+            learning_rate=req.learning_rate,
+            per_device_train_batch_size=req.per_device_train_batch_size,
+            weight_decay=req.weight_decay,
+            warmup_steps=req.warmup_steps,
+            max_train_samples=req.max_train_samples,
+            evaluation_split=req.evaluation_split,
+            seed=req.seed,
         )
-        return {"status": "ok", "model_path": save_path}
+        return {
+            "status": "ok",
+            "output_dir": str(output_dir),
+            "task": req.task_name,
+        }
     except FileNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e))
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:  # pragma: no cover - defensive
-        raise HTTPException(status_code=500, detail=f"Training failed: {e}")
-
-
-@router.get("/hf/tasks")
-def list_huggingface_tasks() -> Dict[str, Any]:
-    """Expose the task-to-model mapping used by the agent library."""
-
-    return {
-        "tasks": MODEL_MAP,
-        "trainable_tasks": sorted(TRAINABLE_TASKS),
-    }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"HF training failed: {e}")

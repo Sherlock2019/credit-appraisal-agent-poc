@@ -1,71 +1,56 @@
-"""Credit appraisal agent powered by a Hugging Face sequence classifier."""
+"""High level wrapper around the Hugging Face credit scoring model."""
+
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import List, Sequence
+from dataclasses import dataclass, field
+from typing import Any, List, Sequence
 
-import torch
+from transformers import pipeline
 
 from .model_registry import load_model
 
 
 @dataclass
-class CreditAssessment:
-    """Structured output for a credit application inference."""
+class CreditAppraisalTextAgent:
+    """Utility wrapper that exposes text classification for credit scoring."""
 
-    label: int
-    confidence: float
-    probabilities: List[float]
+    task_name: str = "credit_appraisal"
+    device: str | int | None = None
+    _pipeline: Any = field(init=False, repr=False)
 
-
-class CreditAppraisalAgent:
-    """Thin wrapper around a pretrained credit scoring model.
-
-    The class is intentionally lightweight: it focuses on orchestrating the
-    tokenizer/model duo and exposes convenience helpers for single or batched
-    inference.  Consumers are expected to provide their own domain-specific
-    post-processing on top of the raw probabilities.
-    """
-
-    def __init__(self, task_name: str = "credit_appraisal") -> None:
-        self.tokenizer, self.model = load_model(task_name)
-        if self.tokenizer is None:
-            raise RuntimeError(
-                "The registered model does not expose a tokenizer – please verify"
-                f" task '{task_name}'."
-            )
-        self.model.eval()
-
-    @torch.inference_mode()
-    def predict(self, text: str) -> CreditAssessment:
-        """Run inference for a single applicant description."""
-
-        encoded = self.tokenizer(text, return_tensors="pt", truncation=True)
-        output = self.model(**encoded)
-        probs = torch.softmax(output.logits, dim=-1).squeeze(0)
-        confidence, label = torch.max(probs, dim=-1)
-        return CreditAssessment(
-            label=int(label.item()),
-            confidence=float(confidence.item()),
-            probabilities=probs.tolist(),
+    def __post_init__(self) -> None:
+        tokenizer, model, _ = load_model(self.task_name)
+        self._pipeline = pipeline(
+            "text-classification",
+            model=model,
+            tokenizer=tokenizer,
+            device=self.device,
+            return_all_scores=True,
         )
 
-    @torch.inference_mode()
-    def batch_predict(self, texts: Sequence[str]) -> List[CreditAssessment]:
-        """Run inference for a batch of applicant descriptions."""
+    def score_texts(self, texts: Sequence[str], *, top_k: int | None = None) -> List[Any]:
+        """Score a list of applicant narratives using the configured model."""
 
+        if not isinstance(texts, (list, tuple)):
+            raise TypeError("texts must be a sequence of strings")
         if not texts:
             return []
-        encoded = self.tokenizer(list(texts), return_tensors="pt", padding=True, truncation=True)
-        output = self.model(**encoded)
-        probs = torch.softmax(output.logits, dim=-1)
-        labels = torch.argmax(probs, dim=-1)
-        confidences = torch.gather(probs, 1, labels.unsqueeze(1)).squeeze(1)
-        return [
-            CreditAssessment(
-                label=int(label.item()),
-                confidence=float(conf.item()),
-                probabilities=prob.tolist(),
-            )
-            for prob, label, conf in zip(probs, labels, confidences)
-        ]
+
+        outputs = self._pipeline(list(texts), truncation=True)
+        if top_k is None:
+            return outputs
+        truncated: List[Any] = []
+        for record in outputs:
+            if isinstance(record, list):
+                truncated.append(sorted(record, key=lambda r: r.get("score", 0.0), reverse=True)[:top_k])
+            else:
+                truncated.append(record)
+        return truncated
+
+    def score_single(self, text: str, *, top_k: int | None = None) -> Any:
+        """Convenience wrapper for a single text snippet."""
+
+        return self.score_texts([text], top_k=top_k)[0]
+
+
+__all__ = ["CreditAppraisalTextAgent"]

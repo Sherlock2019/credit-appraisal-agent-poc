@@ -42,37 +42,6 @@ Human feedback exported to CSV
 Retraining improves next model version
 ```
 
-### 🤖 Hugging Face + Kaggle Sandbox
-
-To accelerate experimentation with transformer backbones and public datasets,
-the repository now ships with a **sandbox library** under
-`services/api/agents/`:
-
-| Agent Task | Hugging Face Checkpoint | Sample Kaggle Dataset | Output |
-| --- | --- | --- | --- |
-| Credit Appraisal | `roberta-base` | Give Me Some Credit | Creditworthiness classification |
-| Asset Appraisal (text) | `distilbert-base-uncased` | House Prices – Advanced Regression | Property valuation heuristics |
-| Asset Appraisal (image) | `google/vit-base-patch16-224` | House Prices – image features | Visual embeddings |
-| KYC Agent (text) | `microsoft/layoutlm-base-uncased` | IDR Dataset | Document classification |
-| KYC Agent (OCR) | `microsoft/trocr-base-stage1` | IDR Dataset | Text extraction |
-| Fraud Detection | `bert-base-uncased` | Credit Card Fraud Detection | Anomaly scoring |
-| Customer Support | `distilbert-base-uncased` | Bank Customer Complaints | Intent classification |
-
-Each task is registered via `services/api/agents/model_registry.py`, providing
-lazily loaded tokenizers/processors and models.  Fine-tuning orchestration lives
-in `services/api/agents/trainer.py`, which can be executed directly:
-
-```bash
-python -m services.api.agents.trainer \
-  --task_name credit_appraisal \
-  --dataset_path datasets/give_me_some_credit.csv \
-  --text_col description \
-  --label_col target
-```
-
-The FastAPI training router exposes matching endpoints under `/v1/training/hf/*`
-for UI and automation workflows.
-
 ---
 
 ## 🚀 From PoC to Production — Scaling Vision
@@ -108,6 +77,61 @@ Visual orchestration for automated retraining and multi-model decision pipelines
 ### 📚 Open Datasets
 
 Incorporate **UCI**, **Kaggle**, and **World Bank** datasets blended with anonymized local data to train models responsibly.
+
+---
+
+## 🤖 Hugging Face Sandbox Library (HF-kaggle branch)
+
+The `HF-kaggle` branch ships a reusable sandbox library that pairs pre-trained Hugging Face checkpoints with Kaggle-ready fine-tuning utilities. Each agent includes a lightweight wrapper so you can bootstrap experiments without wiring up pipelines from scratch.
+
+| Agent Type         | Task                                   | Default Hugging Face Model            | Example Kaggle Dataset                | Output Goal                    |
+| ------------------ | -------------------------------------- | ------------------------------------- | ------------------------------------- | ------------------------------ |
+| Credit Appraisal   | Credit scoring & risk classification   | `roberta-base`                        | Give Me Some Credit                   | Predict creditworthiness       |
+| Asset Appraisal    | Property valuation (text + imagery)    | `distilbert-base-uncased` + `google/vit-base-patch16-224` | House Prices – Advanced Regression | Estimate property valuation    |
+| KYC Agent          | ID verification & OCR                  | `microsoft/layoutlm-base-uncased` + `microsoft/trocr-base-stage1` | IDR Dataset (OCR/Doc)              | Extract and classify identity  |
+| Customer Support   | Chat intent classification             | `distilbert-base-uncased`             | Bank Customer Complaints              | Route intents / responses      |
+| Fraud Detection    | Transaction anomaly detection (text)   | `bert-base-uncased`                   | Credit Card Fraud Detection           | Flag suspicious transactions   |
+
+### Loading agents in Python
+
+```python
+from services.api.agents import CreditAppraisalTextAgent, AssetAppraisalAgent, KYCAgent
+
+credit_agent = CreditAppraisalTextAgent()
+scores = credit_agent.score_single("Applicant has stable income and low DTI")
+
+asset_agent = AssetAppraisalAgent()
+image_scores = asset_agent.score_images(["datasets/house_photo.jpg"])
+
+kyc_agent = KYCAgent()
+entities = kyc_agent.extract_entities("Name: Jane Doe\nPassport: X123456")
+```
+
+### Fine-tune with Kaggle datasets
+
+Use the CLI entry point to fine-tune any registered task on a CSV/TSV dataset:
+
+```bash
+python -m services.api.agents.trainer \
+  --task_name credit_appraisal \
+  --dataset_path datasets/give_me_some_credit.csv \
+  --text_col description \
+  --label_col target \
+  --num_train_epochs 3
+```
+
+The trainer persists weights and tokenizer artifacts under `~/credit-appraisal-agent-poc/models/<task>_trained/` along with a `training_meta.json` audit trail.
+
+### REST endpoints for HF training
+
+The FastAPI service exposes lightweight endpoints to orchestrate training runs remotely:
+
+| Endpoint                | Description                                  |
+| ----------------------- | -------------------------------------------- |
+| `GET /v1/training/hf/tasks` | List registered Hugging Face tasks/models |
+| `POST /v1/training/hf/train` | Trigger fine-tuning given dataset + columns |
+
+`POST /v1/training/hf/train` accepts the same parameters as the CLI (`task_name`, `dataset_path`, `text_col`, `label_col`, etc.) and returns the output directory containing the newly trained checkpoint.
 
 ### 🌐 Multi-Cloud, Multi-Region
 

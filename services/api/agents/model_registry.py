@@ -1,78 +1,103 @@
-"""Model registry for Hugging Face integrations.
+"""Central Hugging Face model registry used by sandbox agents."""
 
-This module lazily loads tokenizers/processors and models for the sandbox
-agents.  The registry is intentionally small to keep downloads manageable while
-providing sensible defaults that match the published architecture overview.
-"""
 from __future__ import annotations
 
+from dataclasses import dataclass
 from functools import lru_cache
-from typing import Tuple, Union
+from typing import Dict, Optional
 
 from transformers import (
-    AutoTokenizer,
-    AutoModelForSequenceClassification,
-    AutoModelForCausalLM,
     AutoModel,
-    AutoImageProcessor,
+    AutoModelForCausalLM,
+    AutoModelForImageClassification,
+    AutoModelForSequenceClassification,
+    AutoModelForTokenClassification,
     AutoProcessor,
+    AutoTokenizer,
     VisionEncoderDecoderModel,
 )
 
-# Mapping between logical task names and Hugging Face model identifiers.
-MODEL_MAP = {
-    "credit_appraisal": "roberta-base",
-    "asset_appraisal_text": "distilbert-base-uncased",
-    "asset_appraisal_image": "google/vit-base-patch16-224",
-    "kyc_text": "microsoft/layoutlm-base-uncased",
-    "kyc_ocr": "microsoft/trocr-base-stage1",
-    "fraud_detection": "bert-base-uncased",
-    "customer_support": "distilbert-base-uncased",
+try:  # Optional import depending on transformers version
+    from transformers import AutoImageProcessor
+except ImportError:  # pragma: no cover - fallback for older releases
+    AutoImageProcessor = AutoProcessor  # type: ignore
+
+
+@dataclass(frozen=True)
+class TaskConfig:
+    """Metadata describing how to bootstrap a Hugging Face checkpoint."""
+
+    model_id: str
+    task_type: str = "sequence_classification"
+    revision: Optional[str] = None
+
+
+MODEL_MAP: Dict[str, TaskConfig] = {
+    "credit_appraisal": TaskConfig("roberta-base", task_type="sequence_classification"),
+    "asset_appraisal_text": TaskConfig("distilbert-base-uncased", task_type="sequence_classification"),
+    "asset_appraisal_image": TaskConfig("google/vit-base-patch16-224", task_type="image_classification"),
+    "kyc_text": TaskConfig("microsoft/layoutlm-base-uncased", task_type="token_classification"),
+    "kyc_ocr": TaskConfig("microsoft/trocr-base-stage1", task_type="vision_to_text"),
+    "fraud_detection": TaskConfig("bert-base-uncased", task_type="sequence_classification"),
+    "customer_support": TaskConfig("distilbert-base-uncased", task_type="sequence_classification"),
 }
 
-ProcessorType = Union[AutoTokenizer, AutoImageProcessor, AutoProcessor]
+
+def list_registered_tasks() -> Dict[str, str]:
+    """Return a simplified mapping of task -> model id for API responses."""
+
+    return {task: cfg.model_id for task, cfg in MODEL_MAP.items()}
 
 
 @lru_cache(maxsize=10)
-def load_model(task_name: str) -> Tuple[ProcessorType | None, object]:
-    """Load the processor/tokenizer and model for a registered task.
+def load_model(task_name: str, *, model_id: Optional[str] = None):
+    """Load a tokenizer/model pair for a registered task.
 
     Parameters
     ----------
     task_name:
-        Logical task identifier.  See :data:`MODEL_MAP` for the list of
-        supported tasks.
+        Key defined in :data:`MODEL_MAP`.
+    model_id:
+        Optional override to load a custom checkpoint.
 
     Returns
     -------
-    Tuple[processor, model]
-        A Hugging Face processor (tokenizer/image processor) paired with the
-        model instance.  Vision models may return ``None`` for the processor if
-        the upstream checkpoint does not expose one.
-
-    Raises
-    ------
-    ValueError
-        If ``task_name`` is not registered in :data:`MODEL_MAP`.
+    tuple(tokenizer, model, processor)
+        Tokenizer is ``None`` for pure vision models, processor is ``None`` for
+        classic text models. Consumers can safely ignore whichever value is not
+        required for their task type.
     """
 
-    model_id = MODEL_MAP.get(task_name)
-    if not model_id:
-        raise ValueError(f"No model registered for task '{task_name}'")
+    if task_name not in MODEL_MAP:
+        raise ValueError(f"No model registered for task '{task_name}'.")
 
-    # Heuristic detection of model families.
-    lowered = model_id.lower()
-    if "vit" in lowered:
-        processor = AutoImageProcessor.from_pretrained(model_id)
-        model = AutoModel.from_pretrained(model_id)
-    elif "trocr" in lowered:
-        processor = AutoProcessor.from_pretrained(model_id)
-        model = VisionEncoderDecoderModel.from_pretrained(model_id)
-    elif "gpt" in lowered or "lm" in lowered:
-        processor = AutoTokenizer.from_pretrained(model_id)
-        model = AutoModelForCausalLM.from_pretrained(model_id)
+    cfg = MODEL_MAP[task_name]
+    checkpoint = model_id or cfg.model_id
+    revision = cfg.revision
+
+    tokenizer = None
+    processor = None
+
+    if cfg.task_type == "image_classification":
+        processor = AutoImageProcessor.from_pretrained(checkpoint, revision=revision)
+        model = AutoModelForImageClassification.from_pretrained(checkpoint, revision=revision)
+    elif cfg.task_type == "vision_to_text":
+        processor = AutoProcessor.from_pretrained(checkpoint, revision=revision)
+        model = VisionEncoderDecoderModel.from_pretrained(checkpoint, revision=revision)
+    elif cfg.task_type == "token_classification":
+        tokenizer = AutoTokenizer.from_pretrained(checkpoint, revision=revision)
+        model = AutoModelForTokenClassification.from_pretrained(checkpoint, revision=revision)
+    elif cfg.task_type == "causal_lm":
+        tokenizer = AutoTokenizer.from_pretrained(checkpoint, revision=revision)
+        model = AutoModelForCausalLM.from_pretrained(checkpoint, revision=revision)
+    elif cfg.task_type == "encoder":
+        tokenizer = AutoTokenizer.from_pretrained(checkpoint, revision=revision)
+        model = AutoModel.from_pretrained(checkpoint, revision=revision)
     else:
-        processor = AutoTokenizer.from_pretrained(model_id)
-        model = AutoModelForSequenceClassification.from_pretrained(model_id)
+        tokenizer = AutoTokenizer.from_pretrained(checkpoint, revision=revision)
+        model = AutoModelForSequenceClassification.from_pretrained(checkpoint, revision=revision)
 
-    return processor, model
+    return tokenizer, model, processor
+
+
+__all__ = ["MODEL_MAP", "TaskConfig", "list_registered_tasks", "load_model"]
