@@ -40,11 +40,13 @@ from services.api.routers.system import router as system_router
 from services.api.routers.agents import router as agents_router
 from services.api.routers.reports import router as reports_router
 from services.api.routers.training import router as training_router
+from services.api.routers.asset_bridge import router as asset_bridge_router
 
 app.include_router(system_router)
 app.include_router(agents_router)
 app.include_router(reports_router)
 app.include_router(training_router)
+app.include_router(asset_bridge_router)
 
 # Root/health
 @app.get("/")

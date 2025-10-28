@@ -23,6 +23,13 @@ import plotly.graph_objects as go
 # CONFIG
 # ────────────────────────────────
 API_URL = os.getenv("API_URL", "http://localhost:8090")
+ASSET_AGENT_REPO_URL = os.getenv(
+    "ASSET_AGENT_REPO_URL",
+    "https://github.com/Sherlock2019/asset-appraisal-agent-",
+)
+ASSET_SAMPLE_PATH = os.path.expanduser(
+    "~/credit-appraisal-agent-poc/asset_appraisal_agent/exports/sample_asset_appraisals.csv"
+)
 RUNS_DIR = os.path.expanduser("~/credit-appraisal-agent-poc/services/api/.runs")
 TMP_FEEDBACK_DIR = os.path.join(RUNS_DIR, "tmp_feedback")
 LANDING_IMG_DIR = os.path.expanduser("~/credit-appraisal-agent-poc/services/ui/landing_images")
@@ -65,7 +72,14 @@ def render_image_tag(agent_id: str, industry: str, emoji_fallback: str) -> str:
 # ────────────────────────────────
 AGENTS = [
     ("🏦 Banking & Finance", "💰 Retail Banking", "💳 Credit Appraisal Agent", "Explainable AI for loan decisioning", "Available", "💳"),
-    ("🏦 Banking & Finance", "💰 Retail Banking", "🏦 Asset Appraisal Agent", "Market-driven collateral valuation", "Coming Soon", "🏦"),
+    (
+        "🏦 Banking & Finance",
+        "💰 Retail Banking",
+        "🏦 Asset Appraisal Agent",
+        "Market-driven collateral valuation",
+        "External Repo",
+        "🏦",
+    ),
     ("🏦 Banking & Finance", "🩺 Insurance", "🩺 Claims Triage Agent", "Automated claims prioritization", "Coming Soon", "🩺"),
     ("⚡ Energy & Sustainability", "🔋 EV & Charging", "⚡ EV Charger Optimizer", "Optimize charger deployment via AI", "Coming Soon", "⚡"),
     ("⚡ Energy & Sustainability", "☀️ Solar", "☀️ Solar Yield Estimator", "Estimate solar ROI and efficiency", "Coming Soon", "☀️"),
@@ -130,6 +144,7 @@ html, body, .block-container {
 }
 .status-Available {color: #22c55e; font-weight:600;}
 .status-ComingSoon {color: #f59e0b; font-weight:600;}
+.status-ExternalRepo {color: #38bdf8; font-weight:600;}
 button {
     transition: all 0.25s ease-in-out;
 }
@@ -885,6 +900,92 @@ with tab_clean:
 with tab_run:
     st.subheader("🤖 Credit appraisal by AI assistant")
 
+    st.markdown("### 🏠 Collateral Asset Bridge (External Agent)")
+    st.markdown(
+        f"Asset appraisal runs from a separate repo — [open agent repo]({ASSET_AGENT_REPO_URL})."
+    )
+
+    if "asset_bridge_info" not in st.session_state:
+        st.session_state["asset_bridge_info"] = None
+    if "asset_bridge_preview" not in st.session_state:
+        st.session_state["asset_bridge_preview"] = []
+    if "asset_join_key" not in st.session_state:
+        st.session_state["asset_join_key"] = "application_id"
+
+    def _set_asset_bridge(payload: Dict[str, Any], join_key: str) -> None:
+        st.session_state["asset_bridge_info"] = payload
+        st.session_state["asset_bridge_preview"] = payload.get("preview", [])
+        st.session_state["asset_join_key"] = join_key
+
+    with st.expander("📥 Upload Asset Appraisal Results (CSV)", expanded=False):
+        join_key_input = st.text_input(
+            "Join column (matches credit dataset column)",
+            value=st.session_state.get("asset_join_key", "application_id"),
+            help="This column must be present in both the asset export and the credit dataset.",
+        )
+        upload_file = st.file_uploader(
+            "Asset appraisal export (.csv)",
+            type=["csv"],
+            key="asset_bridge_file",
+        )
+        colA, colB, colC = st.columns([1, 1, 1])
+        with colA:
+            if st.button("Upload asset CSV", use_container_width=True):
+                if not upload_file:
+                    st.warning("Select a CSV file first.")
+                else:
+                    try:
+                        resp = requests.post(
+                            f"{API_URL}/v1/asset-bridge/upload",
+                            files={"file": (upload_file.name, upload_file.getvalue(), "text/csv")},
+                            timeout=30,
+                        )
+                        resp.raise_for_status()
+                        payload = resp.json()
+                        _set_asset_bridge(payload, join_key_input or "application_id")
+                        st.success("Asset collateral export uploaded.")
+                    except Exception as exc:
+                        st.error(f"Failed to upload asset export: {exc}")
+        with colB:
+            if st.button("Use sample asset export", use_container_width=True):
+                if not os.path.exists(ASSET_SAMPLE_PATH):
+                    st.error("Sample asset appraisal export not found.")
+                else:
+                    try:
+                        with open(ASSET_SAMPLE_PATH, "rb") as f:
+                            sample_bytes = f.read()
+                        resp = requests.post(
+                            f"{API_URL}/v1/asset-bridge/upload",
+                            files={"file": ("sample_asset_appraisals.csv", sample_bytes, "text/csv")},
+                            timeout=30,
+                        )
+                        resp.raise_for_status()
+                        payload = resp.json()
+                        _set_asset_bridge(payload, join_key_input or "application_id")
+                        st.success("Loaded sample asset appraisal export.")
+                    except Exception as exc:
+                        st.error(f"Failed to load sample asset export: {exc}")
+        with colC:
+            if st.button("Clear asset bridge", use_container_width=True):
+                st.session_state["asset_bridge_info"] = None
+                st.session_state["asset_bridge_preview"] = []
+                st.success("Cleared asset bridge context.")
+
+    asset_bridge_info = st.session_state.get("asset_bridge_info")
+    if asset_bridge_info:
+        st.info(
+            f"Asset bridge ready — ID `{asset_bridge_info.get('bridge_id')}` using join column `{st.session_state.get('asset_join_key')}`.",
+            icon="🔗",
+        )
+        preview_records = st.session_state.get("asset_bridge_preview") or []
+        if preview_records:
+            st.caption("Preview of uploaded collateral dataset (first 10 rows).")
+            st.dataframe(pd.DataFrame(preview_records), use_container_width=True)
+    else:
+        st.caption(
+            "Upload the collateral CSV generated by the asset appraisal agent. Decisions like `denied_fraud` will auto-adjust the credit appraisal."
+        )
+
     # Production model banner (optional)
     try:
         resp = requests.get(f"{API_URL}/v1/training/production_meta", timeout=5)
@@ -1060,6 +1161,10 @@ with tab_run:
                 "currency_code": st.session_state["currency_code"],
                 "currency_symbol": st.session_state["currency_symbol"],
             }
+            bridge_info = st.session_state.get("asset_bridge_info")
+            if bridge_info:
+                data["asset_bridge_id"] = bridge_info.get("bridge_id")
+                data["asset_join_key"] = st.session_state.get("asset_join_key", "application_id")
             if rule_mode.startswith("Classic"):
                 rc = st.session_state.classic_rules
                 data.update({
