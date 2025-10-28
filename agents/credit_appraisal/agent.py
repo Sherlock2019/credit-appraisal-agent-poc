@@ -4,6 +4,8 @@ from __future__ import annotations
 import os
 import json
 import time
+import re
+from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
 import numpy as np
@@ -397,6 +399,18 @@ def _run_core(df_in: pd.DataFrame, **params) -> Dict[str, Any]:
 
         final_decision = dec if model_pass else "denied"
         row_reasons.update(checks)
+
+        override = row.get("asset_decision_override")
+        if override:
+            row_reasons["asset_override"] = override
+            if override == "denied_asset_fraud":
+                final_decision = "denied_asset_fraud"
+            elif override == "pending_asset_review" and final_decision == "approved":
+                final_decision = "pending_asset_review"
+
+        include_flag = row.get("asset_include_in_credit")
+        if include_flag is False and final_decision == "approved":
+            final_decision = "pending_asset_review"
 
         decisions.append(final_decision)
         reasons.append(row_reasons)
