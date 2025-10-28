@@ -990,12 +990,18 @@ def page_credit():
             st.session_state.workflow_stage = "review"
             st.rerun()
 
-def page_review():
-    render_pipeline_hero("review")
-    st.title("🧑‍⚖️ Human Review")
-    st.caption("Audit AI outputs, adjust verdicts, and capture agreement metrics.")
+def render_review_workflow(
+    *,
+    uploader_key: str = "review_csv_loader_stage",
+    show_stage_nav: bool = True,
+) -> None:
+    """Render the human-review workflow for both stage-based and tab layouts."""
 
-    uploaded_review = st.file_uploader("Load AI outputs CSV for review (optional)", type=["csv"], key="review_csv_loader_stage")
+    uploaded_review = st.file_uploader(
+        "Load AI outputs CSV for review (optional)",
+        type=["csv"],
+        key=uploader_key,
+    )
     if uploaded_review is not None:
         try:
             st.session_state.last_merged_df = pd.read_csv(uploaded_review)
@@ -1016,21 +1022,35 @@ def page_review():
     editable = dfm[["application_id", "decision"]].copy()
     editable.rename(columns={"decision": "ai_decision"}, inplace=True)
     editable["human_decision"] = editable["ai_decision"]
-    editable = st.data_editor(editable, num_rows="dynamic", use_container_width=True, key="review_editor")
+    editable = st.data_editor(
+        editable,
+        num_rows="dynamic",
+        use_container_width=True,
+        key="review_editor",
+    )
 
     if st.button("💾 Save corrections"):
         st.session_state["review_corrections"] = editable
         st.success("Corrections saved in session.")
 
-    nav = st.columns([1,1,1])
-    with nav[0]:
-        if st.button("⬅️ Back to Credit"):
-            st.session_state.workflow_stage = "credit"
-            st.rerun()
-    with nav[1]:
-        if st.button("➡️ Continue to Training"):
-            st.session_state.workflow_stage = "training"
-            st.rerun()
+    if show_stage_nav:
+        nav = st.columns([1, 1, 1])
+        with nav[0]:
+            if st.button("⬅️ Back to Credit"):
+                st.session_state.workflow_stage = "credit"
+                st.rerun()
+        with nav[1]:
+            if st.button("➡️ Continue to Training"):
+                st.session_state.workflow_stage = "training"
+                st.rerun()
+
+
+def page_review():
+    render_pipeline_hero("review")
+    st.title("🧑‍⚖️ Human Review")
+    st.caption("Audit AI outputs, adjust verdicts, and capture agreement metrics.")
+
+    render_review_workflow(uploader_key="review_csv_loader_stage", show_stage_nav=True)
 
 def page_training():
     render_pipeline_hero("training")
